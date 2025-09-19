@@ -1,0 +1,65 @@
+{
+  "employees": {
+    "33c86f1c-e1aa-4817-984c-4d6374ef44ad": {
+      "id": "33c86f1c-e1aa-4817-984c-4d6374ef44ad",
+      "employeeId": "EMP001",
+      "firstName": "John",
+      "lastName": "Doe",
+      "yearOfBirth": 1990,
+      "loginAttempts": 0,
+      "isLocked": false,
+      "createdAt": "2025-09-19T04:58:31.659Z"
+    },
+    "e270836d-fd68-45be-bcd8-fd0e973064d5": {
+      "id": "e270836d-fd68-45be-bcd8-fd0e973064d5",
+      "employeeId": "EMP002",
+      "firstName": "Jane",
+      "lastName": "Smith",
+      "yearOfBirth": 1985,
+      "loginAttempts": 0,
+      "isLocked": false,
+      "createdAt": "2025-09-19T04:58:31.659Z"
+    },
+    "e30fe760-13bb-4f16-a50b-e6466e9a08bb": {
+      "id": "e30fe760-13bb-4f16-a50b-e6466e9a08bb",
+      "employeeId": "EMP003",
+      "firstName": "Mike",
+      "lastName": "Johnson",
+      "yearOfBirth": 1992,
+      "loginAttempts": 0,
+      "isLocked": false,
+      "createdAt": "2025-09-19T04:58:31.659Z"
+    }
+  },
+  
+  "orders": {
+    "2270a1c3-5de0-4149-946c-3cfdf47f6b64": {
+      "employeeId": "33c86f1c-e1aa-4817-984c-4d6374ef44ad",
+      "productId": "9d99d622-efdc-43b0-a0be-00b98acc881f",
+      "selectedColor": "charcoal",
+      "id": "2270a1c3-5de0-4149-946c-3cfdf47f6b64",
+      "orderId": "ORD-2025-001",
+      "status": "confirmed",
+      "orderDate": "2025-09-19T04:58:47.886Z"
+    }
+  },
+  "sessions": {
+    "ae9a5206-f2d8-413a-913c-a580614bcdbd": {
+      "id": "ae9a5206-f2d8-413a-913c-a580614bcdbd",
+      "employeeId": "33c86f1c-e1aa-4817-984c-4d6374ef44ad",
+      "token": "85e4fb6f-121e-408c-b389-f4846223b9be",
+      "expiresAt": "2025-09-19T05:03:44.356Z",
+      "createdAt": "2025-09-19T04:58:44.356Z"
+    }
+  },
+  "branding": {
+    "id": "718c79dd-de1f-405f-bac4-c29c58f8c529",
+    "logoUrl": null,
+    "companyName": "TechCorp",
+    "primaryColor": "#1e40af",
+    "accentColor": "#f97316",
+    "bannerUrl": null,
+    "bannerText": "Select Your Product",
+    "updatedAt": "2025-09-19T04:58:31.659Z"
+  }
+}
