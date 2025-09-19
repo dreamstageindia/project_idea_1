@@ -91,9 +91,7 @@ function _ProductDetailModal({
               </Button>
             </div>
 
-            <p className="text-3xl font-bold text-primary mb-6" data-testid="text-product-detail-price">
-            ₹{product.price}
-            </p>
+            
 
             {/* Packages Include */}
             {Array.isArray(product.packagesInclude) && product.packagesInclude.length > 0 && (

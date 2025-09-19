@@ -54,9 +54,7 @@ export function OrderConfirmationModal({
                 <p className="text-muted-foreground" data-testid="final-order-product-color">
                   Color: {order.selectedColor}
                 </p>
-                <p className="text-primary font-bold" data-testid="final-order-product-price">
-                ₹{product.price}
-                </p>
+                
               </div>
             </div>
           </div>

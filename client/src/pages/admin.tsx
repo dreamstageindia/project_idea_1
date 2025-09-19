@@ -34,6 +34,8 @@ import {
   Trash,
   Image as ImageIcon,
   Upload as UploadIcon,
+  ArrowLeft,
+  ArrowRight,
 } from "lucide-react";
 
 const ADMIN_PASSWORD = "12345678";
@@ -84,6 +86,19 @@ async function uploadFiles(files: File[]): Promise<string[]> {
   return json.urls as string[];
 }
 
+// ----- small array helpers for reordering/removing -----
+function move<T>(arr: T[], from: number, to: number): T[] {
+  const copy = arr.slice();
+  const item = copy.splice(from, 1)[0];
+  copy.splice(to, 0, item);
+  return copy;
+}
+function removeAt<T>(arr: T[], index: number): T[] {
+  const copy = arr.slice();
+  copy.splice(index, 1);
+  return copy;
+}
+
 export default function Admin() {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -126,7 +141,8 @@ export default function Admin() {
   const { data: stats } = useQuery({ queryKey: ["/api/admin/stats"], enabled: unlocked });
   const { data: orders = [] } = useQuery({ queryKey: ["/api/admin/orders"], enabled: unlocked });
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/admin/employees"], enabled: unlocked });
-  const { data: products = [] } = useQuery<Product[]>({ queryKey: ["/api/products"], enabled: unlocked });
+  // NOTE: admin list (full, without backup substitution)
+  const { data: products = [] } = useQuery<Product[]>({ queryKey: ["/api/products-admin"], enabled: unlocked });
   const { data: branding } = useQuery<Branding>({ queryKey: ["/api/admin/branding"], enabled: unlocked });
 
   const recentOrders = useMemo(() => orders.slice(0, 10), [orders]);
@@ -175,7 +191,7 @@ export default function Admin() {
       return res.json();
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/products"] });
+      qc.invalidateQueries({ queryKey: ["/api/products-admin"] });
       toast({ title: "Product created" });
       setNewProduct(defaultNewProduct);
       setNewProductImages([]);
@@ -189,7 +205,7 @@ export default function Admin() {
       return res.json();
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/products"] });
+      qc.invalidateQueries({ queryKey: ["/api/products-admin"] });
       toast({ title: "Product updated" });
     },
     onError: (e: any) => toast({ title: "Update failed", description: e.message, variant: "destructive" }),
@@ -201,7 +217,7 @@ export default function Admin() {
       return res.json();
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/products"] });
+      qc.invalidateQueries({ queryKey: ["/api/products-admin"] });
       toast({ title: "Product deleted" });
     },
     onError: (e: any) => toast({ title: "Delete failed", description: e.message, variant: "destructive" }),
@@ -277,9 +293,11 @@ export default function Admin() {
   };
   const [newProduct, setNewProduct] = useState<Partial<Product>>(defaultNewProduct);
   const [newProductImages, setNewProductImages] = useState<string[]>([]);
+
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [editProdDraft, setEditProdDraft] = useState<Partial<Product>>({});
-  const [editProdNewImages, setEditProdNewImages] = useState<Record<string, string[]>>({}); // id -> uploaded URLs
+  // single working array per product id for images (existing + newly uploaded)
+  const [editProdImages, setEditProdImages] = useState<Record<string, string[]>>({});
 
   // Branding upload state
   const [logoUploading, setLogoUploading] = useState(false);
@@ -638,11 +656,53 @@ export default function Admin() {
                       />
                       <UploadIcon className="h-5 w-5 opacity-60" />
                     </div>
+
+                    {/* Reorderable thumbnails for create */}
                     {!!newProductImages.length && (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {newProductImages.map((u) => (
-                          <div key={u} className="w-20 h-20 rounded border overflow-hidden bg-muted flex items-center justify-center">
-                            <img src={u} alt="preview" className="object-cover w-full h-full" />
+                      <div className="mt-3 flex flex-wrap gap-3">
+                        {newProductImages.map((u, idx) => (
+                          <div key={u} className="relative">
+                            <div className="w-20 h-20 rounded border overflow-hidden bg-muted flex items-center justify-center">
+                              <img src={u} alt="preview" className="object-cover w-full h-full" />
+                            </div>
+                            <div className="flex justify-center gap-1 mt-1">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                disabled={idx === 0}
+                                onClick={() =>
+                                  setNewProductImages((prev) => move(prev, idx, idx - 1))
+                                }
+                                title="Move left"
+                              >
+                                <ArrowLeft className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                disabled={idx === newProductImages.length - 1}
+                                onClick={() =>
+                                  setNewProductImages((prev) => move(prev, idx, idx + 1))
+                                }
+                                title="Move right"
+                              >
+                                <ArrowRight className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                size="icon"
+                                onClick={() =>
+                                  setNewProductImages((prev) => removeAt(prev, idx))
+                                }
+                                title="Remove"
+                              >
+                                <Trash className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            <div className="text-center text-[10px] text-muted-foreground mt-1">#{idx}</div>
                           </div>
                         ))}
                       </div>
@@ -711,7 +771,7 @@ export default function Admin() {
                     />
                   </div>
 
-                  {/* NEW: Backup product dropdown (create) */}
+                  {/* Backup product dropdown (create) */}
                   <div>
                     <Label>Backup Product (optional)</Label>
                     <select
@@ -739,7 +799,7 @@ export default function Admin() {
                     onClick={() =>
                       createProductMutation.mutate({
                         ...newProduct,
-                        images: newProductImages,
+                        images: newProductImages, // save the reordered images
                       })
                     }
                     disabled={createProductMutation.isPending}
@@ -765,20 +825,22 @@ export default function Admin() {
                         <TableHead>SKU</TableHead>
                         <TableHead>Price</TableHead>
                         <TableHead>Stock</TableHead>
-                        <TableHead>Backup</TableHead>{/* NEW column */}
+                        <TableHead>Backup</TableHead>
                         <TableHead>Images</TableHead>
                         <TableHead>Active</TableHead>
-                        <TableHead className="w-[340px]">Actions</TableHead>
+                        <TableHead className="w-[360px]">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {products.map((p) => {
                         const isEditing = editingProductId === p.id;
-                        const newImgs = editProdNewImages[p.id] || [];
-                        const backupLabel = labelForProduct(p.backupProductId);
+                        const imagesWorking = editProdImages[p.id] ?? p.images;
+                        const setImagesWorking = (next: string[]) =>
+                          setEditProdImages((prev) => ({ ...prev, [p.id]: next }));
 
                         // options for edit dropdown (exclude itself)
                         const backupOptions = products.filter((pp) => pp.id !== p.id);
+                        const backupLabel = labelForProduct(p.backupProductId);
 
                         return (
                           <TableRow key={p.id}>
@@ -826,7 +888,7 @@ export default function Admin() {
                               )}
                             </TableCell>
 
-                            {/* NEW: Backup product cell */}
+                            {/* Backup product cell */}
                             <TableCell>
                               {isEditing ? (
                                 <select
@@ -855,16 +917,50 @@ export default function Admin() {
                               )}
                             </TableCell>
 
+                            {/* Images with reorder controls */}
                             <TableCell>
-                              <div className="flex flex-wrap gap-2">
-                                {p.images.map((u) => (
-                                  <div key={u} className="w-12 h-12 rounded border overflow-hidden bg-muted">
-                                    <img src={u} alt="img" className="object-cover w-full h-full" />
-                                  </div>
-                                ))}
-                                {isEditing && newImgs.map((u) => (
-                                  <div key={u} className="w-12 h-12 rounded border overflow-hidden bg-muted">
-                                    <img src={u} alt="new" className="object-cover w-full h-full" />
+                              <div className="flex flex-wrap gap-3">
+                                {imagesWorking.map((u, idx) => (
+                                  <div key={`${u}-${idx}`} className="relative">
+                                    <div className="w-12 h-12 rounded border overflow-hidden bg-muted">
+                                      <img src={u} alt="img" className="object-cover w-full h-full" />
+                                    </div>
+                                    {isEditing && (
+                                      <>
+                                        <div className="flex justify-center gap-1 mt-1">
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="icon"
+                                            disabled={idx === 0}
+                                            onClick={() => setImagesWorking(move(imagesWorking, idx, idx - 1))}
+                                            title="Move left"
+                                          >
+                                            <ArrowLeft className="h-4 w-4" />
+                                          </Button>
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="icon"
+                                            disabled={idx === imagesWorking.length - 1}
+                                            onClick={() => setImagesWorking(move(imagesWorking, idx, idx + 1))}
+                                            title="Move right"
+                                          >
+                                            <ArrowRight className="h-4 w-4" />
+                                          </Button>
+                                          <Button
+                                            type="button"
+                                            variant="destructive"
+                                            size="icon"
+                                            onClick={() => setImagesWorking(removeAt(imagesWorking, idx))}
+                                            title="Remove"
+                                          >
+                                            <Trash className="h-4 w-4" />
+                                          </Button>
+                                        </div>
+                                        <div className="text-center text-[10px] text-muted-foreground mt-1">#{idx}</div>
+                                      </>
+                                    )}
                                   </div>
                                 ))}
                               </div>
@@ -880,10 +976,7 @@ export default function Admin() {
                                       if (!files.length) return;
                                       try {
                                         const urls = await uploadFiles(files);
-                                        setEditProdNewImages((prev) => ({
-                                          ...prev,
-                                          [p.id]: [...(prev[p.id] || []), ...urls],
-                                        }));
+                                        setImagesWorking([...(imagesWorking || []), ...urls]);
                                         toast({ title: "Images uploaded", description: `${urls.length} new file(s).` });
                                       } catch (err: any) {
                                         toast({ title: "Upload failed", description: err.message, variant: "destructive" });
@@ -894,6 +987,7 @@ export default function Admin() {
                                 </div>
                               )}
                             </TableCell>
+
                             <TableCell>
                               <Badge variant={p.isActive ? "default" : "destructive"}>
                                 {p.isActive ? "Yes" : "No"}
@@ -907,13 +1001,10 @@ export default function Admin() {
                                     onClick={() => {
                                       const updates: Partial<Product> = {
                                         ...editProdDraft,
+                                        images: editProdImages[p.id] ?? p.images, // save reordered/modified images
                                       };
-                                      if (newImgs.length) {
-                                        updates.images = [...p.images, ...newImgs];
-                                      }
                                       updateProductMutation.mutate({ id: p.id, updates });
                                       setEditingProductId(null);
-                                      setEditProdNewImages((prev) => ({ ...prev, [p.id]: [] }));
                                     }}
                                   >
                                     <Save className="h-4 w-4 mr-1" />
@@ -924,7 +1015,12 @@ export default function Admin() {
                                     variant="secondary"
                                     onClick={() => {
                                       setEditingProductId(null);
-                                      setEditProdNewImages((prev) => ({ ...prev, [p.id]: [] }));
+                                      // optional: discard working images
+                                      setEditProdImages((prev) => {
+                                        const next = { ...prev };
+                                        delete next[p.id];
+                                        return next;
+                                      });
                                     }}
                                   >
                                     <X className="h-4 w-4 mr-1" />
@@ -944,6 +1040,8 @@ export default function Admin() {
                                         stock: p.stock,
                                         backupProductId: p.backupProductId ?? null,
                                       });
+                                      // initialize working images with current order
+                                      setEditProdImages((prev) => ({ ...prev, [p.id]: p.images.slice() }));
                                     }}
                                   >
                                     Edit

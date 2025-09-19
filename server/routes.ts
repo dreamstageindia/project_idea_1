@@ -135,7 +135,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // ========= Products =========
-  app.get("/api/products", async (_req, res) => {
+  app.get("/api/products-admin", async (_req, res) => {
     try {
       const products = await storage.getAllProducts();
       const productsWithBackups: any[] = [];
@@ -157,6 +157,51 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.status(500).json({ message: "Error fetching products" });
     }
   });
+
+  // ========= Products =========
+app.get("/api/products", async (_req, res) => {
+  try {
+    const all = await storage.getAllProducts(); // active products only (see storage)
+    const byId = new Map(all.map((p) => [p.id, p]));
+
+    // All product IDs that are referenced as a backup
+    const backupCandidateIds = new Set(
+      all
+        .map((p) => p.backupProductId)
+        .filter((v): v is string => Boolean(v))
+    );
+
+    // Treat anything referenced as a backup as "not a standalone option"
+    const originals = all.filter((p) => !backupCandidateIds.has(p.id));
+
+    const visible: any[] = [];
+
+    for (const orig of originals) {
+      const origStock = Number(orig.stock || 0);
+
+      if (origStock > 0) {
+        // Original has stock — show it
+        visible.push(orig);
+      } else if (origStock <= 0 && orig.backupProductId) {
+        // Original out of stock — try showing its backup (only if it has stock)
+        const backup = byId.get(orig.backupProductId);
+        if (backup && Number(backup.stock || 0) > 0 && backup.isActive !== false) {
+          visible.push({
+            ...backup,
+            isBackup: true,
+            originalProductId: orig.id,
+          });
+        }
+        // If no backup or backup also OOS — show nothing
+      }
+    }
+
+    res.json(visible);
+  } catch {
+    res.status(500).json({ message: "Error fetching products" });
+  }
+});
+
 
   app.get("/api/products/:id", async (req, res) => {
     try {

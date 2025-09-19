@@ -42,9 +42,7 @@ export function ProductCard({ product, onView, onSelect }: ProductCardProps) {
         <ProductCarousel images={product.images || []} alt={product.name} />
         {product.isBackup && (
           <div className="absolute top-2 left-2">
-            <Badge variant="secondary" className="bg-accent text-accent-foreground">
-              Alternative
-            </Badge>
+            
           </div>
         )}
       </div>

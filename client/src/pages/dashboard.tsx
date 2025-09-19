@@ -21,9 +21,27 @@ type Branding = {
   updatedAt: string;
 };
 
+type Product = {
+  id: string;
+  name: string;
+  price: string;
+  images: string[];
+  colors: string[];
+  stock: number; // number from backend
+  packagesInclude?: string[];
+  specifications?: Record<string, string>;
+  sku?: string;
+  isActive?: boolean;
+  backupProductId?: string | null;
+
+  // fields present for injected backup items from API
+  isBackup?: boolean;
+  originalProductId?: string | null;
+};
+
 export default function Dashboard() {
   const { employee } = useAuth();
-  const [selectedProduct, setSelectedProduct] = useState<any>(null);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showProductDetail, setShowProductDetail] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [showOrderConfirmation, setShowOrderConfirmation] = useState(false);
@@ -48,13 +66,12 @@ export default function Dashboard() {
         backgroundPosition: "center",
       };
     }
-    // fallback to gradient when no banner is set
     return {
       backgroundImage: `linear-gradient(90deg, ${primary}, ${accent})`,
     };
   }, [bannerUrl, primary, accent]);
 
-  const { data: products = [] } = useQuery({
+  const { data: products = [] } = useQuery<Product[]>({
     queryKey: ["/api/products"],
   });
 
@@ -63,12 +80,36 @@ export default function Dashboard() {
     retry: false,
   });
 
+  // Build the list we actually show:
+  // 1) If a backup is present, hide its original.
+  // 2) Hide anything with stock <= 0.
+  const displayProducts = useMemo(() => {
+    const list = products as Product[];
+
+    // originals that should be hidden because their backup appears
+    const originalsToHide = new Set(
+      list
+        .filter((p) => p.isBackup && p.originalProductId)
+        .map((p) => p.originalProductId as string)
+    );
+
+    return list.filter((p) => {
+      // filter out-of-stock items
+      if (!p.stock || p.stock <= 0) return false;
+
+      // hide originals if a backup for them exists in the payload
+      if (!p.isBackup && originalsToHide.has(p.id)) return false;
+
+      return true;
+    });
+  }, [products]);
+
   const handleColorChange = useCallback((color: string) => {
     setSelectedColor((prev) => (prev === color ? prev : color));
   }, []);
 
   const handleViewProduct = useCallback(
-    (product: any) => {
+    (product: Product) => {
       setSelectedProduct(product);
       handleColorChange(product?.colors?.[0] || "");
       setShowProductDetail(true);
@@ -77,7 +118,7 @@ export default function Dashboard() {
   );
 
   const handleSelectProduct = useCallback(
-    (product: any, color?: string) => {
+    (product: Product, color?: string) => {
       setSelectedProduct(product);
       handleColorChange(color || product?.colors?.[0] || "");
       setShowConfirmation(true);
@@ -117,7 +158,7 @@ export default function Dashboard() {
                     {myOrder.product?.name}
                   </h4>
                   <p className="text-muted-foreground">Color: {myOrder.order?.selectedColor}</p>
-                  <p className="text-primary font-bold">${myOrder.product?.price}</p>
+                  
                 </div>
               </div>
               <div className="mt-4 pt-4 border-t border-border text-sm text-muted-foreground">
@@ -145,27 +186,26 @@ export default function Dashboard() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Hero with banner background or gradient */}
-        <div
-          className="rounded-xl p-8 mb-8 text-white"
-          style={heroStyle}
-        >
+        <div className="rounded-xl p-8 mb-8 text-white" style={heroStyle}>
           <div className="max-w-2xl bg-black/60 p-3 rounded">
             <h2 className="text-3xl font-bold mb-2">{companyName}</h2>
             <h3 className="text-xl font-semibold mb-4">Select Your Product</h3>
             <p className="text-lg opacity-90 mb-6">
               Choose from our premium collection of corporate products. Each employee can select one product per session.
             </p>
-            {bannerUrl && bannerText ? (
-              <p className="text-sm opacity-90 mb-6">{bannerText}</p>
-            ) : null}
-            
+            {bannerUrl && bannerText ? <p className="text-sm opacity-90 mb-6">{bannerText}</p> : null}
           </div>
         </div>
 
         {/* Product Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {products.map((product: any) => (
-            <ProductCard key={product.id} product={product} onView={handleViewProduct} onSelect={handleSelectProduct} />
+          {displayProducts.map((product) => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              onView={handleViewProduct}
+              onSelect={handleSelectProduct}
+            />
           ))}
         </div>
       </main>
@@ -195,7 +235,11 @@ export default function Dashboard() {
       )}
 
       {showOrderConfirmation && orderData && (
-        <OrderConfirmationModal isOpen onClose={() => setShowOrderConfirmation(false)} orderData={orderData} />
+        <OrderConfirmationModal
+          isOpen
+          onClose={() => setShowOrderConfirmation(false)}
+          orderData={orderData}
+        />
       )}
     </div>
   );

@@ -88,9 +88,7 @@ export function ConfirmationModal({
               <p className="text-muted-foreground" data-testid="confirmation-product-color">
                 Color: {selectedColor}
               </p>
-              <p className="text-primary font-bold" data-testid="confirmation-product-price">
-              ₹{product.price}
-              </p>
+              
             </div>
           </div>
         </div>
