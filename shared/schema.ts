@@ -20,6 +20,7 @@ export const employees = pgTable("employees", {
   yearOfBirth: integer("year_of_birth").notNull(),
   loginAttempts: integer("login_attempts").default(0),
   isLocked: boolean("is_locked").default(false),
+  lockedUntil: timestamp("locked_until"),        // <-- NEW
   createdAt: timestamp("created_at").defaultNow(),
 });
 

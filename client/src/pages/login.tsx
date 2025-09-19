@@ -1,4 +1,3 @@
-// src/pages/login.tsx
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -77,6 +76,26 @@ export default function Login() {
       setShowVerificationModal(true);
     },
     onError: (error: any) => {
+      // If backend returns 423 timed lock, it will be inside error.message JSON payload
+      try {
+        const errorParts = error.message?.split(": ");
+        const jsonPart = errorParts?.slice(1).join(": ");
+        const errorData = jsonPart ? JSON.parse(jsonPart) : null;
+
+        if (errorData?.isLocked) {
+          toast({
+            title: "Unsuccessful attempts .. Please contact HR Team !!",
+            description: errorData.minutesRemaining
+              ? `Please try again after ~${errorData.minutesRemaining} minute(s).`
+              : undefined,
+            variant: "destructive",
+          });
+          return;
+        }
+      } catch {
+        // ignore parse error and fall through
+      }
+
       toast({
         title: "Login Failed",
         description: error.message,
@@ -101,36 +120,41 @@ export default function Login() {
       setLocation("/dashboard");
     },
     onError: (error: any) => {
+      // Show exact copy per requirements
       try {
         const errorParts = error.message.split(": ");
         const jsonPart = errorParts.slice(1).join(": ");
         const errorData = JSON.parse(jsonPart);
 
-        if (errorData.remainingAttempts !== undefined) {
-          const attempts = errorData.remainingAttempts;
-          setRemainingAttempts(attempts);
-
-          if (attempts === 0 || errorData.isLocked) {
-            toast({
-              title: "Account Locked",
-              description: "Your account has been locked due to too many failed attempts.",
-              variant: "destructive",
-            });
-            setShowVerificationModal(false);
-          } else {
-            toast({
-              title: "Invalid Year of Birth",
-              description: `${attempts} attempt${attempts === 1 ? "" : "s"} remaining.`,
-              variant: "destructive",
-            });
-          }
-        } else {
+        // Timed lock or hard lock
+        if (errorData.isLocked) {
           toast({
-            title: "Verification Failed",
-            description: errorData.message || error.message,
+            title: "Unsuccessful attempts .. Please contact HR Team !!",
+            description: errorData.minutesRemaining
+              ? `Please try again after ~${errorData.minutesRemaining} minute(s).`
+              : undefined,
             variant: "destructive",
           });
+          setShowVerificationModal(false);
+          return;
         }
+
+        // First wrong attempt
+        if (errorData.remainingAttempts === 1) {
+          setRemainingAttempts(1);
+          toast({
+            title: "One attempt left .. Please enter the correct Year of Birth !!",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        // Fallback
+        toast({
+          title: "Verification Failed",
+          description: errorData.message || error.message,
+          variant: "destructive",
+        });
       } catch {
         toast({
           title: "Verification Failed",
@@ -172,7 +196,7 @@ export default function Login() {
       {(bannerText && bannerUrl) && (
         <div className="absolute top-0 left-0 right-0 z-10">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            
+            {/* You can place bannerText here if you want it visible on the login page */}
           </div>
         </div>
       )}
@@ -191,8 +215,10 @@ export default function Login() {
                   className="object-contain w-24 h-24 rounded-lg bg-white/90 p-2 shadow"
                 />
               ) : (
-                <div className="w-20 h-20 rounded-xl mx-auto flex items-center justify-center"
-                     style={{ backgroundColor: primary }}>
+                <div
+                  className="w-20 h-20 rounded-xl mx-auto flex items-center justify-center"
+                  style={{ backgroundColor: primary }}
+                >
                   <Building className="text-white text-2xl" />
                 </div>
               )}
