@@ -162,21 +162,7 @@ export default function Login() {
     >
       <div className="w-full max-w-md">
         {/* Optional Banner */}
-        {bannerUrl ? (
-          <div className="mb-6 rounded-xl overflow-hidden border border-border">
-            {/* eslint-disable-next-line jsx-a11y/img-redundant-alt */}
-            <img
-              src={bannerUrl}
-              alt="Banner"
-              className="w-full h-36 object-cover"
-            />
-            {bannerText ? (
-              <div className="p-3 bg-white">
-                <p className="text-sm text-muted-foreground">{bannerText}</p>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
+        
 
         {/* Header with Logo or Fallback Icon */}
         <div className="text-center mb-8">

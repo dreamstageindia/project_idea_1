@@ -48,16 +48,16 @@ export function Header() {
   };
 
   return (
-    <header className="bg-card border-b border-border sticky top-0 z-40" style={headerBg}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+    <header className="bg-card border-b border-border sticky top-0 z-40 " style={headerBg}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 bg-black/40">
+        <div className="flex items-center justify-between h-16 ">
           {/* Logo and Navigation */}
-          <div className="flex items-center space-x-8">
+          <div className="flex items-center space-x-8 b">
             <div className="flex items-center space-x-3" data-testid="logo">
               
                 {logoUrl ? (
                   // eslint-disable-next-line jsx-a11y/img-redundant-alt
-                  <img src={logoUrl} alt="Company logo" className="w-40 h-40 object-contain" />
+                  <img src={logoUrl} alt="Company logo" className="w-40 h-auto object-contain bg-white/40 rounded" />
                 ) : (
                   <Building className="text-white" />
                 )}
@@ -70,7 +70,7 @@ export function Header() {
           {/* User Menu */}
           <div className="flex items-center space-x-4">
             <div className="hidden sm:block text-right">
-              <p className="font-medium" data-testid="text-user-name">
+              <p className="font-medium text-white" data-testid="text-user-name">
                 {employee?.firstName} {employee?.lastName}
               </p>
               <p className="text-sm text-muted-foreground" data-testid="text-employee-id">

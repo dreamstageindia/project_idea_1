@@ -149,7 +149,7 @@ export default function Dashboard() {
           className="rounded-xl p-8 mb-8 text-white"
           style={heroStyle}
         >
-          <div className="max-w-2xl">
+          <div className="max-w-2xl bg-black/60 p-3 rounded">
             <h2 className="text-3xl font-bold mb-2">{companyName}</h2>
             <h3 className="text-xl font-semibold mb-4">Select Your Product</h3>
             <p className="text-lg opacity-90 mb-6">
@@ -158,20 +158,7 @@ export default function Dashboard() {
             {bannerUrl && bannerText ? (
               <p className="text-sm opacity-90 mb-6">{bannerText}</p>
             ) : null}
-            <div className="flex items-center space-x-4 text-sm">
-              <div className="flex items-center">
-                <CheckCircle className="mr-2 h-4 w-4" />
-                <span>Premium Quality</span>
-              </div>
-              <div className="flex items-center">
-                <Truck className="mr-2 h-4 w-4" />
-                <span>Fast Delivery</span>
-              </div>
-              <div className="flex items-center">
-                <Award className="mr-2 h-4 w-4" />
-                <span>Corporate Grade</span>
-              </div>
-            </div>
+            
           </div>
         </div>
 

@@ -36,15 +36,15 @@ export function Footer() {
   }, [bannerUrl]);
 
   return (
-    <footer className="bg-card border-t border-border mt-16" style={footerBg}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <footer className="bg-card border-t border-border mt-16 text-white" style={footerBg}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 bg-black/60">
         <div className="grid md:grid-cols-3 gap-8">
           <div>
             <div className="flex items-center space-x-3 mb-4">
              
                 {logoUrl ? (
                   // eslint-disable-next-line jsx-a11y/img-redundant-alt
-                  <img src={logoUrl} alt="Company logo" className="w-40 h-40 object-contain" />
+                  <img src={logoUrl} alt="Company logo" className="w-40 h-40 object-contain bg-white/40 rounded" />
                 ) : (
                   <Building className="text-white" />
                 )}
