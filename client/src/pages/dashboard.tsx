@@ -8,7 +8,7 @@ import { ProductDetailModal } from "@/components/product/product-detail-modal";
 import { ConfirmationModal } from "@/components/order/confirmation-modal";
 import { OrderConfirmationModal } from "@/components/order/order-confirmation-modal";
 import { useAuth } from "@/hooks/use-auth";
-import { Award, CheckCircle, Truck } from "lucide-react";
+import { CheckCircle, X } from "lucide-react";
 
 type Branding = {
   id: string;
@@ -27,17 +27,64 @@ type Product = {
   price: string;
   images: string[];
   colors: string[];
-  stock: number; // number from backend
+  stock: number;
   packagesInclude?: string[];
   specifications?: Record<string, string>;
   sku?: string;
   isActive?: boolean;
   backupProductId?: string | null;
-
-  // fields present for injected backup items from API
+  // injected by API when a backup replaces an original
   isBackup?: boolean;
   originalProductId?: string | null;
 };
+
+// lightweight inline modal for simple prompts
+function SimplePrompt({
+  open,
+  onClose,
+  children,
+  primaryActionLabel = "OK",
+  onPrimaryAction,
+}: {
+  open: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+  primaryActionLabel?: string;
+  onPrimaryAction?: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative z-[61] w-full max-w-md rounded-xl bg-white shadow-lg border p-6">
+        <button
+          aria-label="Close"
+          className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+          onClick={onClose}
+        >
+          <X className="h-5 w-5" />
+        </button>
+        <div className="space-y-4">
+          <div className="text-base text-foreground">{children}</div>
+          <div className="flex justify-end gap-2">
+            <button
+              className="inline-flex items-center rounded-md border px-3 py-2 text-sm hover:bg-muted"
+              onClick={onClose}
+            >
+              Close
+            </button>
+            <button
+              className="inline-flex items-center rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90"
+              onClick={onPrimaryAction ?? onClose}
+            >
+              {primaryActionLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const { employee } = useAuth();
@@ -47,6 +94,10 @@ export default function Dashboard() {
   const [showOrderConfirmation, setShowOrderConfirmation] = useState(false);
   const [selectedColor, setSelectedColor] = useState("");
   const [orderData, setOrderData] = useState<any>(null);
+
+  // new: small prompts per your spec
+  const [showPleaseSelectPrompt, setShowPleaseSelectPrompt] = useState(false);
+  const [showRecordedPrompt, setShowRecordedPrompt] = useState(false);
 
   const { data: branding } = useQuery<Branding>({
     queryKey: ["/api/admin/branding"],
@@ -80,26 +131,15 @@ export default function Dashboard() {
     retry: false,
   });
 
-  // Build the list we actually show:
-  // 1) If a backup is present, hide its original.
-  // 2) Hide anything with stock <= 0.
+  // Build list to show: hide out-of-stock & hide originals if their backup is present
   const displayProducts = useMemo(() => {
     const list = products as Product[];
-
-    // originals that should be hidden because their backup appears
     const originalsToHide = new Set(
-      list
-        .filter((p) => p.isBackup && p.originalProductId)
-        .map((p) => p.originalProductId as string)
+      list.filter((p) => p.isBackup && p.originalProductId).map((p) => p.originalProductId as string)
     );
-
     return list.filter((p) => {
-      // filter out-of-stock items
       if (!p.stock || p.stock <= 0) return false;
-
-      // hide originals if a backup for them exists in the payload
       if (!p.isBackup && originalsToHide.has(p.id)) return false;
-
       return true;
     });
   }, [products]);
@@ -126,10 +166,20 @@ export default function Dashboard() {
     [handleColorChange]
   );
 
+  // confirm: product selection recorded (API done inside ConfirmationModal)
   const handleConfirmSelection = useCallback((orderResult: any) => {
     setOrderData(orderResult);
     setShowConfirmation(false);
-    setShowOrderConfirmation(true);
+    setShowOrderConfirmation(true); // keep your existing modal if you still want it
+    setShowRecordedPrompt(true);    // show the exact message you requested
+  }, []);
+
+  // when user closes/cancels the confirmation modal
+  const handleDeclineSelection = useCallback(() => {
+    setShowConfirmation(false);
+    setShowPleaseSelectPrompt(true);
+    // also clear any selection color (optional)
+    // setSelectedProduct(null);
   }, []);
 
   if (myOrder) {
@@ -158,7 +208,6 @@ export default function Dashboard() {
                     {myOrder.product?.name}
                   </h4>
                   <p className="text-muted-foreground">Color: {myOrder.order?.selectedColor}</p>
-                  
                 </div>
               </div>
               <div className="mt-4 pt-4 border-t border-border text-sm text-muted-foreground">
@@ -187,11 +236,19 @@ export default function Dashboard() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Hero with banner background or gradient */}
         <div className="rounded-xl p-8 mb-8 text-white" style={heroStyle}>
-          <div className="max-w-2xl bg-black/60 p-3 rounded">
+          <div className="max-w-full bg-black/60 p-3 rounded">
             <h2 className="text-3xl font-bold mb-2">{companyName}</h2>
-            <h3 className="text-xl font-semibold mb-4">Select Your Product</h3>
+            {/* personalize greeting */}
+            <h3 className="text-xl font-semibold mb-4">
+              Dear {employee?.firstName ? employee.firstName : "User"}
+            </h3>
             <p className="text-lg opacity-90 mb-6">
-              Choose from our premium collection of corporate products. Each employee can select one product per session.
+              This festive season, Quess is delighted to extend its warmest wishes to you and your loved ones. As a token of our appreciation, we invite you to select a special gift.
+              Please browse the options below and choose the one that best suits your needs, whether for yourself or your family.
+              <br />
+              <strong>Note:</strong> You are eligible to make one selection only. Once your selection is submitted, it cannot be reversed or changed.
+              <br />
+              We hope you enjoy your gift!
             </p>
             {bannerUrl && bannerText ? <p className="text-sm opacity-90 mb-6">{bannerText}</p> : null}
           </div>
@@ -227,13 +284,18 @@ export default function Dashboard() {
       {showConfirmation && selectedProduct && (
         <ConfirmationModal
           isOpen
-          onClose={() => setShowConfirmation(false)}
+          // IMPORTANT: when user cancels/closes, show the prompt and go back
+          onClose={handleDeclineSelection}
           product={selectedProduct}
           selectedColor={selectedColor}
+          // IMPORTANT: when user confirms, we record and show final prompt
           onConfirm={handleConfirmSelection}
+          // If your ConfirmationModal supports a custom message prop, you could pass:
+          // message={`You've selected the ${selectedProduct.name}. Would you like to confirm your choice?`}
         />
       )}
 
+      {/* Keep your existing success modal if desired */}
       {showOrderConfirmation && orderData && (
         <OrderConfirmationModal
           isOpen
@@ -241,6 +303,37 @@ export default function Dashboard() {
           orderData={orderData}
         />
       )}
+
+      {/* Cancel flow: “Please select your preference!!” */}
+      <SimplePrompt
+        open={showPleaseSelectPrompt}
+        onClose={() => setShowPleaseSelectPrompt(false)}
+        primaryActionLabel="OK"
+      >
+        <span className="font-medium">Please select your preference!!</span>
+      </SimplePrompt>
+
+      {/* Confirmed flow: final message with product name, first name, and reference */}
+      <SimplePrompt
+        open={showRecordedPrompt}
+        onClose={() => setShowRecordedPrompt(false)}
+        primaryActionLabel="Got it"
+      >
+        {orderData ? (
+          <>
+            Your gift selection of the{" "}
+            <span className="font-semibold">{orderData?.product?.name}</span> has been recorded,{" "}
+            <span className="font-semibold">{employee?.firstName ?? "User"}</span>. Your reference
+            number is{" "}
+            <span className="font-mono font-semibold">
+              {orderData?.order?.orderId}
+            </span>
+            . Please proceed to logout. Thank you!
+          </>
+        ) : (
+          <>Your selection has been recorded. Please proceed to logout. Thank you!</>
+        )}
+      </SimplePrompt>
     </div>
   );
 }
