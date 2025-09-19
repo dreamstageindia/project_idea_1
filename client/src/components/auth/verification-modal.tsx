@@ -26,14 +26,14 @@ export function VerificationModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const year = parseInt(yearOfBirth);
+    const year = parseInt(yearOfBirth, 10);
     if (year >= 1950 && year <= 2010) {
       onVerify(year);
     }
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="max-w-md" data-testid="modal-verification">
         <div className="text-center mb-6">
           <div className="w-16 h-16 bg-accent/10 rounded-full mx-auto mb-4 flex items-center justify-center">
@@ -83,7 +83,7 @@ export function VerificationModal({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <Label htmlFor="yearOfBirth" className="block text-sm font-medium mb-2">
-              Year of Birth
+              Year of Birth (YYYY)
             </Label>
             <Input
               id="yearOfBirth"
@@ -91,14 +91,18 @@ export function VerificationModal({
               value={yearOfBirth}
               onChange={(e) => setYearOfBirth(e.target.value)}
               placeholder="YYYY"
-              min="1950"
-              max="2010"
+              min={1950}
+              max={2010}
               className="form-input"
               data-testid="input-year-of-birth"
               required
             />
+            {/* Small italic hint */}
+            <p className="text-xs italic text-muted-foreground mt-1">
+              (As per Quess Records)
+            </p>
           </div>
-          
+
           <div className="flex space-x-3">
             <Button
               type="button"
