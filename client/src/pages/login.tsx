@@ -37,7 +37,7 @@ export default function Login() {
     queryKey: ["/api/admin/branding"],
   });
 
-  // derive colors with sane defaults if DB fields are missing
+  // derive branding with sane defaults
   const primary = branding?.primaryColor || "#1e40af";
   const accent = branding?.accentColor || "#f97316";
   const company = branding?.companyName || "TechCorp";
@@ -45,23 +45,27 @@ export default function Login() {
   const bannerUrl = branding?.bannerUrl || null;
   const bannerText = branding?.bannerText || "";
 
-  // Apply CSS variables for this page so components can inherit if needed
+  // expose CSS vars
   useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty("--brand-primary", primary);
     root.style.setProperty("--brand-accent", accent);
-    return () => {
-      // optional cleanup not strictly required
-    };
   }, [primary, accent]);
 
-  // computed gradient for page bg
-  const bgStyle = useMemo(
-    () => ({
-      backgroundImage: `linear-gradient(135deg, ${primary}14, ${accent}14)`,
-    }),
-    [primary, accent]
-  );
+  // full-page background style
+  const pageBgStyle = useMemo<React.CSSProperties>(() => {
+    if (bannerUrl) {
+      return {
+        backgroundImage: `url(${bannerUrl})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      };
+    }
+    // fallback gradient if no banner
+    return {
+      backgroundImage: `linear-gradient(135deg, ${primary} 0%, ${accent} 100%)`,
+    };
+  }, [bannerUrl, primary, accent]);
 
   const loginMutation = useMutation({
     mutationFn: async (data: { employeeId: string }) => {
@@ -87,7 +91,6 @@ export default function Login() {
       return response.json();
     },
     onSuccess: (data) => {
-      // include expiresAt so session timer stays accurate
       login(data.token, data.employee, data.expiresAt);
       toast({
         title: "Login Successful",
@@ -157,105 +160,128 @@ export default function Login() {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center p-4"
-      style={bgStyle}
+      className="min-h-screen relative"
+      style={pageBgStyle}
     >
-      <div className="w-full max-w-md">
-        {/* Optional Banner */}
-        
+      {/* Dark overlay for readability when an image is present */}
+      {bannerUrl && (
+        <div className="absolute inset-0 bg-black/40" aria-hidden />
+      )}
 
-        {/* Header with Logo or Fallback Icon */}
-        <div className="text-center mb-8">
-          
-            {logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={logoUrl}
-                alt="Company Logo"
-                className="object-contain w-42 h-42"
-              />
-            ) : (
-              <Building className="text-white text-2xl" />
-            )}
-         
-
-          <h1
-            className="text-3xl font-bold"
-            style={{ color: primary }}
-          >
-            {company} Portal
-          </h1>
-          
+      {/* Optional banner text overlay (top center) */}
+      {(bannerText && bannerUrl) && (
+        <div className="absolute top-0 left-0 right-0 z-10">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            
+          </div>
         </div>
+      )}
 
-        <Card className="shadow-lg border border-border bg-white">
-          <CardContent className="pt-6">
-            <h2 className="text-2xl font-semibold text-center mb-6">
-              Employee Login
-            </h2>
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <Label
-                  htmlFor="employeeId"
-                  className="block text-sm font-medium mb-2"
-                >
-                  Employee ID
-                </Label>
-                <Input
-                  id="employeeId"
-                  type="text"
-                  value={employeeId}
-                  onChange={(e) => setEmployeeId(e.target.value)}
-                  placeholder="Enter your Employee ID"
-                  className="form-input"
-                  data-testid="input-employee-id"
-                  required
+      {/* Centered card + brand header */}
+      <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          {/* Logo + company name */}
+          <div className="text-center mb-8">
+            <div className="mx-auto mb-4 flex items-center justify-center">
+              {logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={logoUrl}
+                  alt="Company Logo"
+                  className="object-contain w-24 h-24 rounded-lg bg-white/90 p-2 shadow"
                 />
+              ) : (
+                <div className="w-20 h-20 rounded-xl mx-auto flex items-center justify-center"
+                     style={{ backgroundColor: primary }}>
+                  <Building className="text-white text-2xl" />
+                </div>
+              )}
+            </div>
+
+            <h1
+              className="text-3xl font-bold drop-shadow-sm"
+              style={{ color: bannerUrl ? "#ffffff" : primary }}
+            >
+              {company} Portal
+            </h1>
+            {!bannerUrl && (
+              <p className="text-muted-foreground mt-2">Employee Product Selection System</p>
+            )}
+          </div>
+
+          {/* Login Card */}
+          <Card className="shadow-xl border border-border/50 backdrop-blur bg-white/95">
+            <CardContent className="pt-6">
+              <h2 className="text-2xl font-semibold text-center mb-6">
+                Employee Login
+              </h2>
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <Label
+                    htmlFor="employeeId"
+                    className="block text-sm font-medium mb-2"
+                  >
+                    Employee ID
+                  </Label>
+                  <Input
+                    id="employeeId"
+                    type="text"
+                    value={employeeId}
+                    onChange={(e) => setEmployeeId(e.target.value)}
+                    placeholder="Enter your Employee ID"
+                    className="form-input"
+                    data-testid="input-employee-id"
+                    required
+                  />
+                </div>
+
+                <Button
+                  type="submit"
+                  className="w-full"
+                  style={{
+                    backgroundColor: primary,
+                    borderColor: primary,
+                  }}
+                  disabled={loginMutation.isPending}
+                  data-testid="button-continue"
+                >
+                  {loginMutation.isPending ? "Please wait..." : "Continue"}
+                </Button>
+              </form>
+
+              <div className="mt-4 text-center">
+                <p className="text-sm text-muted-foreground flex items-center justify-center">
+                  <ShieldCheck className="mr-1 h-4 w-4" />
+                  Secure employee authentication
+                </p>
               </div>
+            </CardContent>
+          </Card>
 
-              <Button
-                type="submit"
-                className="w-full"
-                style={{
-                  backgroundColor: primary,
-                  borderColor: primary,
-                }}
-                disabled={loginMutation.isPending}
-                data-testid="button-continue"
-              >
-                {loginMutation.isPending ? "Please wait..." : "Continue"}
-              </Button>
-            </form>
-
-            <div className="mt-4 text-center">
-              <p className="text-sm text-muted-foreground flex items-center justify-center">
-                <ShieldCheck className="mr-1 h-4 w-4" />
-                Secure employee authentication
+          {remainingAttempts < 2 && remainingAttempts > 0 && (
+            <div
+              className="mt-4 p-4 rounded-lg text-center border"
+              style={{ borderColor: "#ef444433", background: "#ef444411" }}
+            >
+              <p className="text-destructive font-medium" data-testid="text-remaining-attempts">
+                {remainingAttempts} login attempt{remainingAttempts === 1 ? "" : "s"} remaining
               </p>
             </div>
-          </CardContent>
-        </Card>
+          )}
 
-        {remainingAttempts < 2 && remainingAttempts > 0 && (
-          <div className="mt-4 p-4 rounded-lg text-center border" style={{ borderColor: "#ef444433", background: "#ef444411" }}>
-            <p className="text-destructive font-medium" data-testid="text-remaining-attempts">
-              {remainingAttempts} login attempt{remainingAttempts === 1 ? "" : "s"} remaining
-            </p>
-          </div>
-        )}
-
-        <VerificationModal
-          isOpen={showVerificationModal}
-          onClose={() => setShowVerificationModal(false)}
-          onVerify={handleVerification}
-          employee={employeeData}
-          isLoading={verificationMutation.isPending}
-          onChangeEmployeeId={() => {
-            setShowVerificationModal(false);
-            setEmployeeId("");
-          }}
-        />
+          <VerificationModal
+            isOpen={showVerificationModal}
+            onClose={() => setShowVerificationModal(false)}
+            onVerify={handleVerification}
+            employee={employeeData}
+            isLoading={verificationMutation.isPending}
+            onChangeEmployeeId={() => {
+              setShowVerificationModal(false);
+              setEmployeeId("");
+            }}
+          />
+        </div>
       </div>
     </div>
   );
