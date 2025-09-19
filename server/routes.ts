@@ -54,115 +54,61 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // ========= Authentication =========
-  // server/routes (registerRoutes): /api/auth/login
-app.post("/api/auth/login", async (req, res) => {
-  try {
-    const { employeeId } = loginSchema.parse(req.body);
-    const employee = await storage.getEmployeeByEmployeeId(employeeId);
-    if (!employee) return res.status(404).json({ message: "Employee not found" });
-
-    // NEW: active lockout check
-    if (employee.lockedUntil && new Date(employee.lockedUntil) > new Date()) {
-      const ms = new Date(employee.lockedUntil).getTime() - Date.now();
-      const mins = Math.ceil(ms / 60000);
-      return res.status(423).json({
-        message: "Account is temporarily locked",
-        isLocked: true,
-        lockedUntil: employee.lockedUntil,
-        minutesRemaining: mins,
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { employeeId } = loginSchema.parse(req.body);
+      const employee = await storage.getEmployeeByEmployeeId(employeeId);
+      if (!employee) return res.status(404).json({ message: "Employee not found" });
+      if (employee.isLocked) {
+        return res.status(423).json({ message: "Account is locked due to too many failed attempts" });
+      }
+      res.json({
+        employee: {
+          id: employee.id,
+          employeeId: employee.employeeId,
+          firstName: employee.firstName,
+          lastName: employee.lastName,
+        },
       });
+    } catch {
+      res.status(400).json({ message: "Invalid request" });
     }
-    if (employee.isLocked) {
-      return res.status(423).json({ message: "Account is locked due to too many failed attempts", isLocked: true });
-    }
+  });
 
-    res.json({
-      employee: {
-        id: employee.id,
-        employeeId: employee.employeeId,
-        firstName: employee.firstName,
-        lastName: employee.lastName,
-      },
-    });
-  } catch {
-    res.status(400).json({ message: "Invalid request" });
-  }
-});
+  app.post("/api/auth/verify", async (req, res) => {
+    try {
+      const { employeeId, yearOfBirth } = verificationSchema.parse(req.body);
+      const employee = await storage.getEmployeeByEmployeeId(employeeId);
+      if (!employee) return res.status(404).json({ message: "Employee not found" });
+      if (employee.isLocked) return res.status(423).json({ message: "Account is locked" });
 
-
- // /api/auth/verify
-app.post("/api/auth/verify", async (req, res) => {
-  try {
-    const { employeeId, yearOfBirth } = verificationSchema.parse(req.body);
-    const employee = await storage.getEmployeeByEmployeeId(employeeId);
-    if (!employee) return res.status(404).json({ message: "Employee not found" });
-
-    // Block if currently locked
-    if (employee.lockedUntil && new Date(employee.lockedUntil) > new Date()) {
-      const ms = new Date(employee.lockedUntil).getTime() - Date.now();
-      const mins = Math.ceil(ms / 60000);
-      return res.status(423).json({
-        message: "Account is temporarily locked",
-        isLocked: true,
-        lockedUntil: employee.lockedUntil,
-        minutesRemaining: mins,
-      });
-    }
-    if (employee.isLocked) {
-      return res.status(423).json({ message: "Account is locked", isLocked: true });
-    }
-
-    // Check YOB
-    if (employee.yearOfBirth !== yearOfBirth) {
-      const updatedAttempts = (employee.loginAttempts || 0) + 1;
-
-      if (updatedAttempts >= 2) {
-        const lockedUntil = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
-        await storage.updateEmployee(employee.id, {
-          loginAttempts: updatedAttempts,
-          isLocked: true,
-          lockedUntil,
-        });
-
-        return res.status(423).json({
-          message: "Unsuccessful attempts .. Please contact HR Team !!",
-          isLocked: true,
-          lockedUntil,
-          remainingAttempts: 0,
-        });
-      } else {
-        await storage.updateEmployee(employee.id, { loginAttempts: updatedAttempts });
+      if (employee.yearOfBirth !== yearOfBirth) {
+        const updatedAttempts = (employee.loginAttempts || 0) + 1;
+        const isLocked = updatedAttempts >= 2;
+        await storage.updateEmployee(employee.id, { loginAttempts: updatedAttempts, isLocked });
         return res.status(401).json({
-          message: "One attempt left .. Please enter the correct Year of Birth !!",
-          remainingAttempts: 1,
-          isLocked: false,
+          message: "Invalid year of birth",
+          remainingAttempts: Math.max(0, 2 - updatedAttempts),
+          isLocked,
         });
       }
+
+      await storage.updateEmployee(employee.id, { loginAttempts: 0, isLocked: false });
+      const session = await storage.createSession(employee.id);
+      res.json({
+        token: session.token,
+        employee: {
+          id: employee.id,
+          employeeId: employee.employeeId,
+          firstName: employee.firstName,
+          lastName: employee.lastName,
+        },
+        expiresAt: session.expiresAt,
+      });
+    } catch {
+      res.status(400).json({ message: "Invalid request" });
     }
-
-    // Success -> reset counters and lock
-    await storage.updateEmployee(employee.id, {
-      loginAttempts: 0,
-      isLocked: false,
-      lockedUntil: null,
-    });
-
-    const session = await storage.createSession(employee.id);
-    res.json({
-      token: session.token,
-      employee: {
-        id: employee.id,
-        employeeId: employee.employeeId,
-        firstName: employee.firstName,
-        lastName: employee.lastName,
-      },
-      expiresAt: session.expiresAt,
-    });
-  } catch {
-    res.status(400).json({ message: "Invalid request" });
-  }
-});
-
+  });
 
   app.post("/api/auth/logout", async (req, res) => {
     const token = req.headers.authorization?.replace("Bearer ", "");
@@ -388,23 +334,17 @@ app.get("/api/products", async (_req, res) => {
     }
   });
 
-  // /api/admin/employees/:id/unlock
-app.post("/api/admin/employees/:id/unlock", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const emp = await storage.getEmployee(id);
-    if (!emp) return res.status(404).json({ message: "Employee not found" });
-    const updated = await storage.updateEmployee(id, {
-      loginAttempts: 0,
-      isLocked: false,
-      lockedUntil: null, // <-- clear timed lock
-    });
-    res.json(updated);
-  } catch {
-    res.status(500).json({ message: "Error unlocking employee" });
-  }
-});
-
+  app.post("/api/admin/employees/:id/unlock", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const emp = await storage.getEmployee(id);
+      if (!emp) return res.status(404).json({ message: "Employee not found" });
+      const updated = await storage.updateEmployee(id, { loginAttempts: 0, isLocked: false });
+      res.json(updated);
+    } catch {
+      res.status(500).json({ message: "Error unlocking employee" });
+    }
+  });
 
   app.get("/api/admin/orders", async (_req, res) => {
     try {
