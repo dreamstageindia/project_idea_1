@@ -1091,233 +1091,235 @@ export default function Admin() {
           </Card>
         )}
       </main>
-    </div>
 
-    {/* Edit Product Modal */}
-    <Dialog open={editOpen} onOpenChange={(o) => (o ? setEditOpen(true) : closeEditModal())}>
-      <DialogContent className="max-w-3xl">
-        <div className="mb-4">
-          <h3 className="text-lg font-semibold">Edit Product</h3>
-          {productEditing ? (
-            <p className="text-sm text-muted-foreground">SKU: <span className="font-mono">{productEditing.sku}</span></p>
-          ) : null}
-        </div>
-
-        <div className="grid md:grid-cols-2 gap-4">
-          <div>
-            <Label>Name</Label>
-            <Input
-              value={editDraft.name ?? ""}
-              onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
-            />
+      {/* Product Edit Modal */}
+      <Dialog open={editOpen} onOpenChange={(o) => (o ? setEditOpen(true) : closeEditModal())}>
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+          <div className="mb-4 flex-shrink-0">
+            <h3 className="text-lg font-semibold">Edit Product</h3>
+            {productEditing ? (
+              <p className="text-sm text-muted-foreground">SKU: <span className="font-mono">{productEditing.sku}</span></p>
+            ) : null}
           </div>
 
-          <div>
-            <Label>Price</Label>
-            <Input
-              type="number"
-              step="0.01"
-              value={String(editDraft.price ?? "")}
-              onChange={(e) => setEditDraft((d) => ({ ...d, price: e.target.value }))}
-            />
-          </div>
-
-          <div>
-            <Label>Colors (comma-separated)</Label>
-            <Input
-              value={(editDraft.colors ?? []).join(",")}
-              onChange={(e) =>
-                setEditDraft((d) => ({
-                  ...d,
-                  colors: e.target.value.split(",").map((s) => s.trim()).filter(Boolean),
-                }))
-              }
-            />
-          </div>
-
-          <div>
-            <Label>Stock</Label>
-            <Input
-              type="number"
-              value={String(editDraft.stock ?? 0)}
-              onChange={(e) => setEditDraft((d) => ({ ...d, stock: Number(e.target.value) || 0 }))}
-            />
-          </div>
-
-          <div>
-            <Label>SKU</Label>
-            <Input
-              value={editDraft.sku ?? ""}
-              onChange={(e) => setEditDraft((d) => ({ ...d, sku: e.target.value }))}
-            />
-          </div>
-
-          <div>
-            <Label>Active</Label>
-            <div className="flex items-center gap-2">
-              <input
-                id="isActive"
-                type="checkbox"
-                className="h-4 w-4"
-                checked={Boolean(editDraft.isActive)}
-                onChange={(e) => setEditDraft((d) => ({ ...d, isActive: e.target.checked }))}
-              />
-              <Label htmlFor="isActive" className="text-sm">Is Active</Label>
-            </div>
-          </div>
-
-          <div className="md:col-span-2">
-            <Label>Backup Product (optional)</Label>
-            <select
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              value={editDraft.backupProductId ?? ""}
-              onChange={(e) =>
-                setEditDraft((d) => ({
-                  ...d,
-                  backupProductId: e.target.value ? e.target.value : null,
-                }))
-              }
-            >
-              <option value="">— None —</option>
-              {products
-                .filter((pp) => pp.id !== productEditing?.id)
-                .map((bp) => (
-                  <option key={bp.id} value={bp.id}>
-                    {bp.name} ({bp.sku})
-                  </option>
-                ))}
-            </select>
-          </div>
-
-          <div className="md:col-span-2">
-            <Label>Packages Include</Label>
-            <Textarea
-              value={(editDraft.packagesInclude ?? []).join("\n")}
-              onChange={(e) =>
-                setEditDraft((d) => ({
-                  ...d,
-                  packagesInclude: e.target.value
-                    .split("\n")
-                    .map((s) => s.trim())
-                    .filter(Boolean),
-                }))
-              }
-            />
-          </div>
-
-          <div className="md:col-span-2">
-            <Label>Specifications</Label>
-            <Textarea
-              value={Object.entries(editDraft.specifications ?? {})
-                .map(([k, v]) => `${k}:${v}`)
-                .join("\n")}
-              onChange={(e) => {
-                const obj: Record<string, string> = {};
-                e.target.value.split("\n").forEach((line) => {
-                  const idx = line.indexOf(":");
-                  if (idx > 0) {
-                    const k = line.slice(0, idx).trim();
-                    const v = line.slice(idx + 1).trim();
-                    if (k) obj[k] = v;
-                  }
-                });
-                setEditDraft((d) => ({ ...d, specifications: obj }));
-              }}
-            />
-          </div>
-
-          {/* Images editor */}
-          <div className="md:col-span-2">
-            <Label>Images</Label>
-            <div className="flex items-center gap-3">
-              <Input
-                type="file"
-                multiple
-                accept="image/*"
-                onChange={async (e) => {
-                  const files = Array.from(e.target.files ?? []);
-                  if (!files.length) return;
-                  try {
-                    const urls = await uploadFiles(files);
-                    setEditImages((prev) => [...prev, ...urls]);
-                    toast({ title: "Images uploaded", description: `${urls.length} new file(s).` });
-                  } catch (err: any) {
-                    toast({ title: "Upload failed", description: err.message, variant: "destructive" });
-                  }
-                }}
-              />
-              <ImageIcon className="h-4 w-4 opacity-60" />
-            </div>
-            {!!editImages.length && (
-              <div className="mt-3 flex flex-wrap gap-3">
-                {editImages.map((u, idx) => (
-                  <div key={`${u}-${idx}`} className="relative">
-                    <div className="w-20 h-20 rounded border overflow-hidden bg-muted">
-                      <img src={u} alt="img" className="object-cover w-full h-full" />
-                    </div>
-                    <div className="flex justify-center gap-1 mt-1">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        disabled={idx === 0}
-                        onClick={() => setEditImages((prev) => move(prev, idx, idx - 1))}
-                        title="Move left"
-                      >
-                        <ArrowLeft className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        disabled={idx === editImages.length - 1}
-                        onClick={() => setEditImages((prev) => move(prev, idx, idx + 1))}
-                        title="Move right"
-                      >
-                        <ArrowRight className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="icon"
-                        onClick={() => setEditImages((prev) => removeAt(prev, idx))}
-                        title="Remove"
-                      >
-                        <Trash className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <div className="text-center text-[10px] text-muted-foreground mt-1">#{idx}</div>
-                  </div>
-                ))}
+          <div className="flex-1 overflow-y-auto pr-2">
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <Label>Name</Label>
+                <Input
+                  value={editDraft.name ?? ""}
+                  onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
+                />
               </div>
-            )}
-          </div>
-        </div>
 
-        {/* Modal actions */}
-        <div className="mt-6 flex justify-end gap-2">
-          <Button
-            variant="secondary"
-            onClick={closeEditModal}
-          >
-            <X className="h-4 w-4 mr-1" />
-            Cancel
-          </Button>
-          <Button
-            onClick={() => {
-              if (!productEditing) return;
-              const updates: Partial<Product> = {
-                ...editDraft,
-                images: editImages,
-              };
-              updateProductMutation.mutate({ id: productEditing.id, updates });
-            }}
-          >
-            <Save className="h-4 w-4 mr-1" />
-            Save Changes
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+              <div>
+                <Label>Price</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={String(editDraft.price ?? "")}
+                  onChange={(e) => setEditDraft((d) => ({ ...d, price: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <Label>Colors (comma-separated)</Label>
+                <Input
+                  value={(editDraft.colors ?? []).join(",")}
+                  onChange={(e) =>
+                    setEditDraft((d) => ({
+                      ...d,
+                      colors: e.target.value.split(",").map((s) => s.trim()).filter(Boolean),
+                    }))
+                  }
+                />
+              </div>
+
+              <div>
+                <Label>Stock</Label>
+                <Input
+                  type="number"
+                  value={String(editDraft.stock ?? 0)}
+                  onChange={(e) => setEditDraft((d) => ({ ...d, stock: Number(e.target.value) || 0 }))}
+                />
+              </div>
+
+              <div>
+                <Label>SKU</Label>
+                <Input
+                  value={editDraft.sku ?? ""}
+                  onChange={(e) => setEditDraft((d) => ({ ...d, sku: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <Label>Active</Label>
+                <div className="flex items-center gap-2">
+                  <input
+                    id="isActive"
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={Boolean(editDraft.isActive)}
+                    onChange={(e) => setEditDraft((d) => ({ ...d, isActive: e.target.checked }))}
+                  />
+                  <Label htmlFor="isActive" className="text-sm">Is Active</Label>
+                </div>
+              </div>
+
+              <div className="md:col-span-2">
+                <Label>Backup Product (optional)</Label>
+                <select
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={editDraft.backupProductId ?? ""}
+                  onChange={(e) =>
+                    setEditDraft((d) => ({
+                      ...d,
+                      backupProductId: e.target.value ? e.target.value : null,
+                    }))
+                  }
+                >
+                  <option value="">— None —</option>
+                  {products
+                    .filter((pp) => pp.id !== productEditing?.id)
+                    .map((bp) => (
+                      <option key={bp.id} value={bp.id}>
+                        {bp.name} ({bp.sku})
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="md:col-span-2">
+                <Label>Packages Include</Label>
+                <Textarea
+                  value={(editDraft.packagesInclude ?? []).join("\n")}
+                  onChange={(e) =>
+                    setEditDraft((d) => ({
+                      ...d,
+                      packagesInclude: e.target.value
+                        .split("\n")
+                        .map((s) => s.trim())
+                        .filter(Boolean),
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <Label>Specifications</Label>
+                <Textarea
+                  value={Object.entries(editDraft.specifications ?? {})
+                    .map(([k, v]) => `${k}:${v}`)
+                    .join("\n")}
+                  onChange={(e) => {
+                    const obj: Record<string, string> = {};
+                    e.target.value.split("\n").forEach((line) => {
+                      const idx = line.indexOf(":");
+                      if (idx > 0) {
+                        const k = line.slice(0, idx).trim();
+                        const v = line.slice(idx + 1).trim();
+                        if (k) obj[k] = v;
+                      }
+                    });
+                    setEditDraft((d) => ({ ...d, specifications: obj }));
+                  }}
+                />
+              </div>
+
+              {/* Images editor */}
+              <div className="md:col-span-2">
+                <Label>Images</Label>
+                <div className="flex items-center gap-3">
+                  <Input
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    onChange={async (e) => {
+                      const files = Array.from(e.target.files ?? []);
+                      if (!files.length) return;
+                      try {
+                        const urls = await uploadFiles(files);
+                        setEditImages((prev) => [...prev, ...urls]);
+                        toast({ title: "Images uploaded", description: `${urls.length} new file(s).` });
+                      } catch (err: any) {
+                        toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+                      }
+                    }}
+                  />
+                  <ImageIcon className="h-4 w-4 opacity-60" />
+                </div>
+                {!!editImages.length && (
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    {editImages.map((u, idx) => (
+                      <div key={`${u}-${idx}`} className="relative">
+                        <div className="w-20 h-20 rounded border overflow-hidden bg-muted">
+                          <img src={u} alt="img" className="object-cover w-full h-full" />
+                        </div>
+                        <div className="flex justify-center gap-1 mt-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            disabled={idx === 0}
+                            onClick={() => setEditImages((prev) => move(prev, idx, idx - 1))}
+                            title="Move left"
+                          >
+                            <ArrowLeft className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            disabled={idx === editImages.length - 1}
+                            onClick={() => setEditImages((prev) => move(prev, idx, idx + 1))}
+                            title="Move right"
+                          >
+                            <ArrowRight className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="icon"
+                            onClick={() => setEditImages((prev) => removeAt(prev, idx))}
+                            title="Remove"
+                          >
+                            <Trash className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div className="text-center text-[10px] text-muted-foreground mt-1">#{idx}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Modal actions */}
+          <div className="mt-6 flex justify-end gap-2 flex-shrink-0">
+            <Button
+              variant="secondary"
+              onClick={closeEditModal}
+            >
+              <X className="h-4 w-4 mr-1" />
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!productEditing) return;
+                const updates: Partial<Product> = {
+                  ...editDraft,
+                  images: editImages,
+                };
+                updateProductMutation.mutate({ id: productEditing.id, updates });
+              }}
+            >
+              <Save className="h-4 w-4 mr-1" />
+              Save Changes
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
