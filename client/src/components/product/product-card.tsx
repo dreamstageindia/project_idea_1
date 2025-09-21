@@ -90,23 +90,7 @@ export function ProductCard({ product, onView, onSelect }: ProductCardProps) {
           </div>
         )}
 
-        {/* Stock Status */}
-        <div className="flex items-center justify-between mb-4">
-          {isOutOfStock ? (
-            <span className="text-sm text-red-600 font-medium flex items-center">
-              <CircleAlert className="mr-1 h-4 w-4" />
-              Out of stock
-            </span>
-          ) : (
-            <span className="text-sm text-green-600 font-medium flex items-center">
-              <CheckCircle className="mr-1 h-4 w-4" />
-              <span data-testid={`text-stock-${product.id}`}>{product.stock}</span> in stock
-            </span>
-          )}
-          <span className="text-xs text-muted-foreground">
-            SKU: <span data-testid={`text-sku-${product.id}`}>{product.sku}</span>
-          </span>
-        </div>
+        
 
         {/* Action Buttons */}
         <div className="flex space-x-3">

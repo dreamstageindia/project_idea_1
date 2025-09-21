@@ -163,15 +163,7 @@ function _ProductDetailModal({
               </div>
             )}
 
-            {/* Stock Status */}
-            <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-              <div className="flex items-center">
-                <CheckCircle className="text-green-600 mr-2 h-5 w-5" />
-                <span className="text-green-800 font-medium">
-                  <span data-testid="text-detail-stock">{product.stock}</span> units available
-                </span>
-              </div>
-            </div>
+            
 
             {/* Action Button */}
             <Button
