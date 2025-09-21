@@ -51,9 +51,6 @@ export function OrderConfirmationModal({
                 <h4 className="font-semibold" data-testid="final-order-product-name">
                   {product.name}
                 </h4>
-                <p className="text-muted-foreground" data-testid="final-order-product-color">
-                  Color: {order.selectedColor}
-                </p>
                 
               </div>
             </div>

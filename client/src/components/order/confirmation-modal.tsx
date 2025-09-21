@@ -85,9 +85,6 @@ export function ConfirmationModal({
               <h4 className="font-semibold" data-testid="confirmation-product-name">
                 {product.name}
               </h4>
-              <p className="text-muted-foreground" data-testid="confirmation-product-color">
-                Color: {selectedColor}
-              </p>
               
             </div>
           </div>
