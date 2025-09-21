@@ -60,26 +60,26 @@ function SimplePrompt({
   const content = (
     <div
       className="fixed inset-0 flex items-center justify-center"
-      style={{ zIndex: 10000 }} // higher than shadcn/radix defaults
+      style={{ zIndex: 99999 }} // Much higher than shadcn/radix defaults (z-50)
     >
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/50"
-        style={{ zIndex: 10000 }}
+        style={{ zIndex: 99999 }}
         onClick={onClose}
       />
 
       {/* Dialog panel */}
       <div
         className="relative w-full max-w-md rounded-xl bg-white shadow-2xl border p-6"
-        style={{ zIndex: 10001 }}
+        style={{ zIndex: 100000 }}
         role="dialog"
         aria-modal="true"
         onClick={(e) => e.stopPropagation()} // Prevent backdrop click when clicking inside modal
       >
         <button
           aria-label="Close"
-          className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+          className="absolute right-3 top-3 text-muted-foreground hover:text-foreground z-10"
           onClick={onClose}
           type="button"
         >
@@ -91,14 +91,14 @@ function SimplePrompt({
           <div className="flex justify-end gap-2">
             <button
               type="button"
-              className="inline-flex items-center rounded-md border px-3 py-2 text-sm hover:bg-muted"
+              className="inline-flex items-center rounded-md border px-3 py-2 text-sm hover:bg-muted z-10"
               onClick={onClose}
             >
               Close
             </button>
             <button
               type="button"
-              className="inline-flex items-center rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90"
+              className="inline-flex items-center rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90 z-10"
               onClick={onPrimaryAction ?? onClose}
             >
               {primaryActionLabel}
