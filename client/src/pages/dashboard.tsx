@@ -75,6 +75,7 @@ function SimplePrompt({
         style={{ zIndex: 10001 }}
         role="dialog"
         aria-modal="true"
+        onClick={(e) => e.stopPropagation()} // Prevent backdrop click when clicking inside modal
       >
         <button
           aria-label="Close"
