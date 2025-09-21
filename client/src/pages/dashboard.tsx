@@ -203,6 +203,7 @@ export default function Dashboard() {
   // when user closes/cancels the confirmation modal
   const handleDeclineSelection = useCallback(() => {
     setShowConfirmation(false);
+    setShowProductDetail(false); // Close the product detail modal
     setShowPleaseSelectPrompt(true);
   }, []);
 
