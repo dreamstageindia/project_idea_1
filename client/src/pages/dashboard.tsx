@@ -230,7 +230,9 @@ export default function Dashboard() {
                   <h4 className="font-semibold" data-testid="text-selected-product-name">
                     {myOrder.product?.name}
                   </h4>
-                  <p className="text-muted-foreground">Color: {myOrder.order?.selectedColor}</p>
+                  {myOrder.order?.selectedColor && (
+                    <p className="text-muted-foreground">{myOrder.order?.selectedColor}</p>
+                  )}
                 </div>
               </div>
               <div className="mt-4 pt-4 border-t border-border text-sm text-muted-foreground">
