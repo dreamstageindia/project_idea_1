@@ -60,19 +60,19 @@ function SimplePrompt({
   const content = (
     <div
       className="fixed inset-0 flex items-center justify-center"
-      style={{ zIndex: 99999 }} // Much higher than shadcn/radix defaults (z-50)
+      style={{ zIndex: 999999 }} // Much higher than any other modal
     >
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/50"
-        style={{ zIndex: 99999 }}
+        style={{ zIndex: 999999 }}
         onClick={onClose}
       />
 
       {/* Dialog panel */}
       <div
         className="relative w-full max-w-md rounded-xl bg-white shadow-2xl border p-6"
-        style={{ zIndex: 100000 }}
+        style={{ zIndex: 1000000 }} // Even higher for the content
         role="dialog"
         aria-modal="true"
         onClick={(e) => e.stopPropagation()} // Prevent backdrop click when clicking inside modal
