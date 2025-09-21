@@ -15,6 +15,12 @@ export function ProductCard({ product, onView, onSelect }: ProductCardProps) {
   const [selectedColor, setSelectedColor] = useState(product.colors?.[0] || "");
 
   const getColorStyle = (color: string) => {
+    // Check if it's a hex color (starts with # and is 6-7 characters)
+    if (color.match(/^#[0-9A-Fa-f]{6}$/)) {
+      return "";
+    }
+    
+    // Fallback to named colors for backward compatibility
     const colorMap: Record<string, string> = {
       black: "bg-black",
       white: "bg-white border-2 border-gray-300",
@@ -26,6 +32,14 @@ export function ProductCard({ product, onView, onSelect }: ProductCardProps) {
       "rose-gold": "bg-gradient-to-br from-rose-300 to-amber-200",
     };
     return colorMap[color] || "bg-gray-400";
+  };
+
+  const getColorInlineStyle = (color: string) => {
+    // If it's a hex color, return inline style
+    if (color.match(/^#[0-9A-Fa-f]{6}$/)) {
+      return { backgroundColor: color };
+    }
+    return {};
   };
 
   const isOutOfStock = product.stock === 0;
@@ -67,6 +81,7 @@ export function ProductCard({ product, onView, onSelect }: ProductCardProps) {
                   className={`color-option ${getColorStyle(color)} ${
                     selectedColor === color ? "selected" : ""
                   }`}
+                  style={getColorInlineStyle(color)}
                   onClick={() => setSelectedColor(color)}
                   data-testid={`color-option-${color}-${product.id}`}
                 />
