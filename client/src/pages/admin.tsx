@@ -36,6 +36,7 @@ import {
   Upload as UploadIcon,
   ArrowLeft,
   ArrowRight,
+  FileDown,
 } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 
@@ -98,6 +99,27 @@ function removeAt<T>(arr: T[], index: number): T[] {
   const copy = arr.slice();
   copy.splice(index, 1);
   return copy;
+}
+
+// CSV helpers
+function csvEscape(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  const s = String(value);
+  // Escape quotes by doubling them, and wrap with quotes if comma/quote/newline present
+  const needsWrap = /[",\n\r]/.test(s);
+  const escaped = s.replace(/"/g, '""');
+  return needsWrap ? `"${escaped}"` : escaped;
+}
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 export default function Admin() {
@@ -340,6 +362,89 @@ export default function Admin() {
     setEditImages([]);
   }
 
+  // ---------- Orders Export (Excel/CSV) ----------
+  const [exportOpen, setExportOpen] = useState(false);
+  const ORDER_EXPORT_COLUMNS = [
+    { key: "orderId", label: "Order ID" },
+    { key: "employeeId", label: "Employee ID" },
+    { key: "employeeName", label: "Employee Name" },
+    { key: "productName", label: "Product Name" },
+    { key: "selectedColor", label: "Color" },
+    { key: "price", label: "Price" },
+    { key: "orderDate", label: "Order Date" },
+    { key: "status", label: "Status" },
+  ] as const;
+
+  type ExportKey = (typeof ORDER_EXPORT_COLUMNS)[number]["key"];
+  const [selectedExportCols, setSelectedExportCols] = useState<ExportKey[]>(
+    ORDER_EXPORT_COLUMNS.map((c) => c.key) // default: all selected
+  );
+
+  const toggleExportCol = (key: ExportKey) => {
+    setSelectedExportCols((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  };
+
+  const exportOrdersCsv = () => {
+    if (!orders.length || !selectedExportCols.length) {
+      toast({ title: "Nothing to export", description: "Please select at least one column.", variant: "destructive" });
+      return;
+    }
+
+    const header = selectedExportCols
+      .map((key) => {
+        const col = ORDER_EXPORT_COLUMNS.find((c) => c.key === key)!;
+        return csvEscape(col.label);
+      })
+      .join(",");
+
+    const rows = orders.map((o: any) => {
+      const values = selectedExportCols.map((key) => {
+        switch (key) {
+          case "orderId":
+            return csvEscape(o.orderId);
+          case "employeeId":
+            return csvEscape(o.employee?.employeeId ?? "");
+          case "employeeName":
+            return csvEscape(`${o.employee?.firstName ?? ""} ${o.employee?.lastName ?? ""}`.trim());
+          case "productName":
+            return csvEscape(o.product?.name ?? "");
+          case "selectedColor":
+            return csvEscape(o.selectedColor ?? "");
+          case "price":
+            return csvEscape(o.product?.price ?? "");
+          case "orderDate":
+            // Format as YYYY-MM-DD HH:mm
+            try {
+              const d = new Date(o.orderDate);
+              const y = d.getFullYear();
+              const m = String(d.getMonth() + 1).padStart(2, "0");
+              const da = String(d.getDate()).padStart(2, "0");
+              const hh = String(d.getHours()).padStart(2, "0");
+              const mm = String(d.getMinutes()).padStart(2, "0");
+              return csvEscape(`${y}-${m}-${da} ${hh}:${mm}`);
+            } catch {
+              return csvEscape(o.orderDate ?? "");
+            }
+          case "status":
+            return csvEscape(o.status ?? "");
+          default:
+            return "";
+        }
+      });
+      return values.join(",");
+    });
+
+    const csv = [header, ...rows].join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    downloadBlob(blob, `orders-export-${stamp}.csv`);
+    setExportOpen(false);
+    toast({ title: "Export started", description: "Your CSV file has been downloaded." });
+  };
+
+  // Helper: label for backup product
   function labelForProduct(prodId: string | null | undefined) {
     if (!prodId) return "—";
     const p = products.find((pp) => pp.id === prodId);
@@ -899,8 +1004,12 @@ export default function Admin() {
 
         {activeSection === "orders" && (
           <Card>
-            <CardHeader>
+            <CardHeader className="flex items-center justify-between">
               <CardTitle>All Orders</CardTitle>
+              <Button variant="outline" size="sm" onClick={() => setExportOpen(true)}>
+                <FileDown className="h-4 w-4 mr-2" />
+                Export (Excel/CSV)
+              </Button>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
@@ -1316,6 +1425,41 @@ export default function Admin() {
             >
               <Save className="h-4 w-4 mr-1" />
               Save Changes
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Orders Export Dialog */}
+      <Dialog open={exportOpen} onOpenChange={(o) => setExportOpen(o)}>
+        <DialogContent className="max-w-md">
+          <div className="mb-2">
+            <h3 className="text-lg font-semibold">Export Orders (Excel/CSV)</h3>
+            <p className="text-sm text-muted-foreground">Choose the columns you want to export.</p>
+          </div>
+
+          <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+            {ORDER_EXPORT_COLUMNS.map((c) => (
+              <label key={c.key} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={selectedExportCols.includes(c.key)}
+                  onChange={() => toggleExportCol(c.key)}
+                />
+                {c.label}
+              </label>
+            ))}
+          </div>
+
+          <div className="mt-4 flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setExportOpen(false)}>
+              <X className="h-4 w-4 mr-1" />
+              Cancel
+            </Button>
+            <Button onClick={exportOrdersCsv}>
+              <FileDown className="h-4 w-4 mr-1" />
+              Export CSV
             </Button>
           </div>
         </DialogContent>
