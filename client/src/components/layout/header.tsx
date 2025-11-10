@@ -64,7 +64,7 @@ export function Header() {
   };
 
   return (
-    <header className="bg-card border-b border-border sticky top-0 z-40 " style={headerBg}>
+    <header className="bg-card border-b border-border sticky top-0 z-40 text-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 bg-black/40">
         <div className="flex items-center justify-between h-16 ">
           {/* Logo and Navigation */}
