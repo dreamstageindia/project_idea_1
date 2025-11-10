@@ -3,8 +3,10 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
-import { Building, LogOut, Menu, X } from "lucide-react";
+import { Building, LogOut, Menu, X, ShoppingCart, History } from "lucide-react";
 import { useLocation } from "wouter";
+import { apiRequest } from "@/lib/queryClient";
+import { Badge } from "@/components/ui/badge";
 
 type Branding = {
   id: string;
@@ -17,14 +19,28 @@ type Branding = {
   updatedAt: string;
 };
 
+type CartItem = {
+  id: string;
+  employeeId: string;
+  productId: string;
+  quantity: number;
+};
+
 export function Header() {
   const { employee, logout } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
 
   const { data: branding } = useQuery<Branding>({
     queryKey: ["/api/admin/branding"],
   });
+
+  const { data: cartItems = [] } = useQuery<CartItem[]>({
+    queryKey: ["/api/cart"],
+    enabled: !!employee,
+  });
+
+  const cartItemCount = useMemo(() => cartItems.length, [cartItems]);
 
   const companyName = branding?.companyName || "TechCorp";
   const primary = branding?.primaryColor || "#1e40af";
@@ -63,12 +79,26 @@ export function Header() {
                 )}
             
             </div>
-
-            
           </div>
 
           {/* User Menu */}
           <div className="flex items-center space-x-4">
+            <div className="relative">
+              <Button variant="ghost" onClick={() => setLocation("/cart")}>
+                <ShoppingCart className="h-5 w-5" />
+                {cartItemCount > 0 && (
+                  <Badge
+                    className="absolute -top-2 -right-2 bg-red-500 text-white"
+                    style={{ minWidth: "1.5rem", height: "1.5rem", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}
+                  >
+                    {cartItemCount}
+                  </Badge>
+                )}
+              </Button>
+            </div>
+            <Button variant="ghost" onClick={() => setLocation("/my-orders")}>
+              <History className="h-5 w-5" />
+            </Button>
             <div className="hidden sm:block text-right">
               <p className="font-medium text-white" data-testid="text-user-name">
                 {employee?.firstName} {employee?.lastName}
@@ -76,13 +106,14 @@ export function Header() {
               <p className="text-sm text-muted-foreground" data-testid="text-employee-id">
                 {employee?.employeeId}
               </p>
+              <p className="text-sm">
+                Points: {employee?.points ?? 0}
+              </p>
             </div>
             <Button variant="destructive" size="sm" onClick={handleLogout} data-testid="button-logout">
               <LogOut className="mr-2 h-4 w-4" />
               Logout
             </Button>
-
-            
           </div>
         </div>
       </div>

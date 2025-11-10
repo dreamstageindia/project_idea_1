@@ -1,10 +1,11 @@
+// src/components/order/confirmation-modal.tsx
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { CheckCircle } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { CheckCircle } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 
 interface ConfirmationModalProps {
   isOpen: boolean;
@@ -25,13 +26,28 @@ export function ConfirmationModal({
   const { token } = useAuth();
   const queryClient = useQueryClient();
 
+  const { data: branding } = useQuery({
+    queryKey: ["/api/admin/branding"],
+  });
+
+  const inrPerPoint = parseFloat(branding?.inrPerPoint || "1");
+  const pointsRequired = Math.ceil(parseFloat(product.price) / inrPerPoint);
+
   const createOrderMutation = useMutation({
     mutationFn: async (data: { productId: string; selectedColor: string }) => {
-      const response = await apiRequest("POST", "/api/orders", data);
+      const response = await fetch("/api/orders", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error("Failed to create order");
       return response.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/orders/my-order"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/orders/my-orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
       onConfirm(data);
       toast({
@@ -61,7 +77,7 @@ export function ConfirmationModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md" data-testid="modal-confirmation">
+      <DialogContent className="max-w-md" data-testid="modal-confirmation" style={{ zIndex: 1002 }}>
         <div className="text-center mb-6">
           <div className="w-16 h-16 bg-accent/10 rounded-full mx-auto mb-4 flex items-center justify-center">
             <CheckCircle className="text-accent text-2xl" />
@@ -69,8 +85,6 @@ export function ConfirmationModal({
           <h3 className="text-xl font-semibold mb-2">Confirm Product Selection</h3>
           <p className="text-muted-foreground">Are you sure you want to choose this product?</p>
         </div>
-
-        {/* Selected Product Summary */}
         <div className="bg-muted rounded-lg p-4 mb-6">
           <div className="flex items-center space-x-4">
             <div className="w-16 h-16 bg-gray-100 rounded-lg">
@@ -85,11 +99,12 @@ export function ConfirmationModal({
               <h4 className="font-semibold" data-testid="confirmation-product-name">
                 {product.name}
               </h4>
-              
+              <p className="text-muted-foreground" data-testid="confirmation-points-required">
+                {pointsRequired} points
+              </p>
             </div>
           </div>
         </div>
-
         <div className="flex space-x-3">
           <Button
             variant="secondary"

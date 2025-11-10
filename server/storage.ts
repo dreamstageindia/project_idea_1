@@ -1,20 +1,25 @@
 // server/storage.ts
-import { and, desc, eq, sql as dsql } from "drizzle-orm";
+import { and, desc, eq, sql as dsql, isNull } from "drizzle-orm";
 import { db } from "./db";
 import {
   employees,
   products,
   orders,
+  cartItems,
   sessions,
   branding as brandingTable,
+  otps,
   type Employee,
   type InsertEmployee,
   type Product,
   type InsertProduct,
   type Order,
   type InsertOrder,
+  type CartItem,
+  type InsertCartItem,
   type Session,
   type Branding,
+  type OTP,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
@@ -22,6 +27,7 @@ export interface IStorage {
   // Employees
   getEmployee(id: string): Promise<Employee | undefined>;
   getEmployeeByEmployeeId(employeeId: string): Promise<Employee | undefined>;
+  getEmployeeByPhone(phoneE164: string): Promise<Employee | undefined>;
   createEmployee(employee: InsertEmployee): Promise<Employee>;
   updateEmployee(id: string, updates: Partial<Employee>): Promise<Employee | undefined>;
   getAllEmployees(): Promise<Employee[]>;
@@ -35,9 +41,17 @@ export interface IStorage {
 
   // Orders
   getOrder(id: string): Promise<Order | undefined>;
-  getOrderByEmployeeId(employeeId: string): Promise<Order | undefined>;
+  getOrdersByEmployeeId(employeeId: string): Promise<Order[]>;
   getAllOrders(): Promise<Order[]>;
   createOrder(order: InsertOrder): Promise<Order>;
+
+  // Cart
+  getCartItem(id: string): Promise<CartItem | undefined>;
+  getCartItems(employeeId: string): Promise<CartItem[]>;
+  createCartItem(item: InsertCartItem): Promise<CartItem>;
+  updateCartItem(id: string, updates: Partial<CartItem>): Promise<CartItem | undefined>;
+  removeCartItem(id: string): Promise<boolean>;
+  clearCart(employeeId: string): Promise<void>;
 
   // Sessions
   getSession(token: string): Promise<Session | undefined>;
@@ -48,14 +62,13 @@ export interface IStorage {
   getBranding(): Promise<Branding | undefined>;
   updateBranding(updates: Partial<Branding>): Promise<Branding>;
 
-  // Legacy (compat)
-  getUser(id: string): Promise<Employee | undefined>;
-  getUserByUsername(username: string): Promise<Employee | undefined>;
-  createUser(user: any): Promise<Employee>;
+  // OTP
+  createOTP(rec: { phoneNumber: string; code: string; expiresAt: Date; metadata?: any }): Promise<OTP>;
+  getLastOTPForPhone(phoneNumber: string): Promise<OTP | undefined>;
+  markOTPAsUsed(id: string): Promise<void>;
 }
 
 class DrizzleStorage implements IStorage {
-  // --- Employees ---
   async getEmployee(id: string) {
     const rows = await db.select().from(employees).where(eq(employees.id, id)).limit(1);
     return rows[0];
@@ -67,6 +80,11 @@ class DrizzleStorage implements IStorage {
       .from(employees)
       .where(eq(employees.employeeId, employeeId))
       .limit(1);
+    return rows[0];
+  }
+
+  async getEmployeeByPhone(phoneE164: string) {
+    const rows = await db.select().from(employees).where(eq(employees.phoneNumber, phoneE164)).limit(1);
     return rows[0];
   }
 
@@ -84,7 +102,6 @@ class DrizzleStorage implements IStorage {
     return db.select().from(employees).orderBy(desc(employees.createdAt));
   }
 
-  // --- Products ---
   async getProduct(id: string) {
     const rows = await db.select().from(products).where(eq(products.id, id)).limit(1);
     return rows[0];
@@ -113,20 +130,13 @@ class DrizzleStorage implements IStorage {
     return res.rowCount ? res.rowCount > 0 : true;
   }
 
-  // --- Orders ---
   async getOrder(id: string) {
     const rows = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
     return rows[0];
   }
 
-  async getOrderByEmployeeId(employeeId: string) {
-    const rows = await db
-      .select()
-      .from(orders)
-      .where(eq(orders.employeeId, employeeId))
-      .orderBy(desc(orders.orderDate))
-      .limit(1);
-    return rows[0];
+  async getOrdersByEmployeeId(employeeId: string) {
+    return db.select().from(orders).where(eq(orders.employeeId, employeeId)).orderBy(desc(orders.orderDate));
   }
 
   async getAllOrders() {
@@ -134,7 +144,6 @@ class DrizzleStorage implements IStorage {
   }
 
   async createOrder(orderData: InsertOrder) {
-    // Human-friendly orderId: ORD-YYYY-xxx
     const year = new Date().getFullYear();
     const [{ c }] = await db
       .select({ c: dsql<number>`count(*)` })
@@ -150,20 +159,44 @@ class DrizzleStorage implements IStorage {
         orderId,
         status: "confirmed",
         orderDate: new Date(),
+        metadata: orderData.metadata ?? null,
       })
       .returning();
     return rows[0];
   }
 
-  // --- Sessions ---
+  async getCartItem(id: string) {
+    const rows = await db.select().from(cartItems).where(eq(cartItems.id, id)).limit(1);
+    return rows[0];
+  }
+
+  async getCartItems(employeeId: string) {
+    return db.select().from(cartItems).where(eq(cartItems.employeeId, employeeId));
+  }
+
+  async createCartItem(item: InsertCartItem) {
+    const rows = await db.insert(cartItems).values(item).returning();
+    return rows[0];
+  }
+
+  async updateCartItem(id: string, updates: Partial<CartItem>) {
+    const rows = await db.update(cartItems).set(updates).where(eq(cartItems.id, id)).returning();
+    return rows[0];
+  }
+
+  async removeCartItem(id: string) {
+    const res = await db.delete(cartItems).where(eq(cartItems.id, id));
+    return res.rowCount ? res.rowCount > 0 : true;
+  }
+
+  async clearCart(employeeId: string) {
+    await db.delete(cartItems).where(eq(cartItems.employeeId, employeeId));
+  }
+
   async getSession(token: string) {
     const rows = await db.select().from(sessions).where(eq(sessions.token, token)).limit(1);
     const sess = rows[0];
     if (!sess) return undefined;
-    if (sess.expiresAt && new Date(sess.expiresAt) < new Date()) {
-      await this.deleteSession(token);
-      return undefined;
-    }
     return sess;
   }
 
@@ -173,7 +206,7 @@ class DrizzleStorage implements IStorage {
       .values({
         employeeId,
         token: randomUUID(),
-        expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         createdAt: new Date(),
       })
       .returning();
@@ -185,7 +218,6 @@ class DrizzleStorage implements IStorage {
     return res.rowCount ? res.rowCount > 0 : true;
   }
 
-  // --- Branding ---
   async getBranding() {
     const rows = await db.select().from(brandingTable).limit(1);
     return rows[0];
@@ -208,15 +240,31 @@ class DrizzleStorage implements IStorage {
     return rows[0];
   }
 
-  // --- Legacy (compat) ---
-  async getUser(id: string) {
-    return this.getEmployee(id);
+  async createOTP(rec: { phoneNumber: string; code: string; expiresAt: Date; metadata?: any }) {
+    const rows = await db
+      .insert(otps)
+      .values({
+        phoneNumber: rec.phoneNumber,
+        code: rec.code,
+        expiresAt: rec.expiresAt,
+        metadata: rec.metadata ?? null,
+      })
+      .returning();
+    return rows[0];
   }
-  async getUserByUsername(username: string) {
-    return this.getEmployeeByEmployeeId(username);
+
+  async getLastOTPForPhone(phoneNumber: string) {
+    const rows = await db
+      .select()
+      .from(otps)
+      .where(and(eq(otps.phoneNumber, phoneNumber), isNull(otps.usedAt)))
+      .orderBy(desc(otps.createdAt))
+      .limit(1);
+    return rows[0];
   }
-  async createUser(user: any) {
-    return this.createEmployee(user);
+
+  async markOTPAsUsed(id: string) {
+    await db.update(otps).set({ usedAt: new Date() }).where(eq(otps.id, id));
   }
 }
 

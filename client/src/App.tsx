@@ -8,6 +8,8 @@ import NotFound from "@/pages/not-found";
 import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
 import Admin from "@/pages/admin";
+import Cart from "@/pages/cart";
+import MyOrders from "@/pages/my-orders";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { SessionTimer } from "@/components/session/session-timer";
 
@@ -35,6 +37,14 @@ function Routes() {
         {isAuthenticated ? <Dashboard /> : <Login />}
       </Route>
 
+      <Route path="/cart">
+        {isAuthenticated ? <Cart /> : <Login />}
+      </Route>
+
+      <Route path="/my-orders">
+        {isAuthenticated ? <MyOrders /> : <Login />}
+      </Route>
+
       <Route path="/">
         {isAuthenticated ? <Dashboard /> : <Login />}
       </Route>
@@ -51,7 +61,6 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>
-          <SessionTimer />
           <Toaster />
           <Routes />
         </AuthProvider>

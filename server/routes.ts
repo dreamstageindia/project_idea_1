@@ -1,22 +1,31 @@
+// server/registerRoutes.ts
 import type { Express } from "express";
 import path from "node:path";
 import fs from "node:fs";
 import multer from "multer";
 import {
-  loginSchema,
-  verificationSchema,
   insertProductSchema,
   insertEmployeeSchema,
+  insertCartItemSchema,
 } from "@shared/schema";
 import { storage } from "./storage";
+import { sendOTP, verifyOTP } from "./auth-otp";
+import crypto from "crypto";
+import "dotenv/config";
 
-// ensure uploads directory exists
+function normalizePhonePlus(input?: string | null): string {
+  if (!input) return "";
+  const digits = String(input).replace(/\D+/g, "");
+  if (!digits) return "";
+  if (digits.length <= 10) return `+91${digits}`;
+  return `+${digits}`;
+}
+
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 
-// Multer storage config: keep original ext, unique prefix
 const storageEngine = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
   filename: (_req, file, cb) => {
@@ -30,85 +39,27 @@ const storageEngine = multer.diskStorage({
 const upload = multer({
   storage: storageEngine,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB per file
-    files: 10,                  // up to 10 files per request
+    fileSize: 10 * 1024 * 1024,
+    files: 10,
   },
 });
 
-// convert absolute file path under uploads/ to a public URL
 function toPublicUrl(absPath: string) {
   const rel = path.relative(UPLOAD_DIR, absPath).replaceAll("\\", "/");
   return `/uploads/${rel}`;
 }
 
 export async function registerRoutes(app: Express): Promise<void> {
-  // serve the uploads folder as static (public)
   app.use("/uploads", (await import("express")).default.static(UPLOAD_DIR));
 
-  // ========= Upload API =========
-  // Single or multiple files. Use field name "files" in multipart form.
   app.post("/api/upload", upload.array("files", 10), (req, res) => {
     const files = (req.files as Express.Multer.File[]) || [];
     const urls = files.map((f) => toPublicUrl(f.path));
     res.json({ urls });
   });
 
-  // ========= Authentication =========
-  app.post("/api/auth/login", async (req, res) => {
-    try {
-      const { employeeId } = loginSchema.parse(req.body);
-      const employee = await storage.getEmployeeByEmployeeId(employeeId);
-      if (!employee) return res.status(404).json({ message: "Employee not found" });
-      if (employee.isLocked) {
-        return res.status(423).json({ message: "Account is locked due to too many failed attempts" });
-      }
-      res.json({
-        employee: {
-          id: employee.id,
-          employeeId: employee.employeeId,
-          firstName: employee.firstName,
-          lastName: employee.lastName,
-        },
-      });
-    } catch {
-      res.status(400).json({ message: "Invalid request" });
-    }
-  });
-
-  app.post("/api/auth/verify", async (req, res) => {
-    try {
-      const { employeeId, yearOfBirth } = verificationSchema.parse(req.body);
-      const employee = await storage.getEmployeeByEmployeeId(employeeId);
-      if (!employee) return res.status(404).json({ message: "Employee not found" });
-      if (employee.isLocked) return res.status(423).json({ message: "Account is locked" });
-
-      if (employee.yearOfBirth !== yearOfBirth) {
-        const updatedAttempts = (employee.loginAttempts || 0) + 1;
-        const isLocked = updatedAttempts >= 2;
-        await storage.updateEmployee(employee.id, { loginAttempts: updatedAttempts, isLocked });
-        return res.status(401).json({
-          message: "Invalid year of birth",
-          remainingAttempts: Math.max(0, 2 - updatedAttempts),
-          isLocked,
-        });
-      }
-
-      await storage.updateEmployee(employee.id, { loginAttempts: 0, isLocked: false });
-      const session = await storage.createSession(employee.id);
-      res.json({
-        token: session.token,
-        employee: {
-          id: employee.id,
-          employeeId: employee.employeeId,
-          firstName: employee.firstName,
-          lastName: employee.lastName,
-        },
-        expiresAt: session.expiresAt,
-      });
-    } catch {
-      res.status(400).json({ message: "Invalid request" });
-    }
-  });
+  app.post("/api/auth/send-otp", sendOTP);
+  app.post("/api/auth/verify-otp", verifyOTP);
 
   app.post("/api/auth/logout", async (req, res) => {
     const token = req.headers.authorization?.replace("Bearer ", "");
@@ -126,15 +77,16 @@ export async function registerRoutes(app: Express): Promise<void> {
     res.json({
       employee: {
         id: employee.id,
-        employeeId: employee.employeeId,
+        employeeId: employee.employeeId ?? null,
         firstName: employee.firstName,
         lastName: employee.lastName,
+        phoneNumber: employee.phoneNumber ?? null,
+        points: employee.points ?? 0,
       },
       expiresAt: session.expiresAt,
     });
   });
 
-  // ========= Products =========
   app.get("/api/products-admin", async (_req, res) => {
     try {
       const products = await storage.getAllProducts();
@@ -158,50 +110,37 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // ========= Products =========
-app.get("/api/products", async (_req, res) => {
-  try {
-    const all = await storage.getAllProducts(); // active products only (see storage)
-    const byId = new Map(all.map((p) => [p.id, p]));
-
-    // All product IDs that are referenced as a backup
-    const backupCandidateIds = new Set(
-      all
-        .map((p) => p.backupProductId)
-        .filter((v): v is string => Boolean(v))
-    );
-
-    // Treat anything referenced as a backup as "not a standalone option"
-    const originals = all.filter((p) => !backupCandidateIds.has(p.id));
-
-    const visible: any[] = [];
-
-    for (const orig of originals) {
-      const origStock = Number(orig.stock || 0);
-
-      if (origStock > 0) {
-        // Original has stock — show it
-        visible.push(orig);
-      } else if (origStock <= 0 && orig.backupProductId) {
-        // Original out of stock — try showing its backup (only if it has stock)
-        const backup = byId.get(orig.backupProductId);
-        if (backup && Number(backup.stock || 0) > 0 && backup.isActive !== false) {
-          visible.push({
-            ...backup,
-            isBackup: true,
-            originalProductId: orig.id,
-          });
+  app.get("/api/products", async (_req, res) => {
+    try {
+      const all = await storage.getAllProducts();
+      const byId = new Map(all.map((p) => [p.id, p]));
+      const backupCandidateIds = new Set(
+        all
+          .map((p) => p.backupProductId)
+          .filter((v): v is string => Boolean(v))
+      );
+      const originals = all.filter((p) => !backupCandidateIds.has(p.id));
+      const visible: any[] = [];
+      for (const orig of originals) {
+        const origStock = Number(orig.stock || 0);
+        if (origStock > 0) {
+          visible.push(orig);
+        } else if (origStock <= 0 && orig.backupProductId) {
+          const backup = byId.get(orig.backupProductId);
+          if (backup && Number(backup.stock || 0) > 0 && backup.isActive !== false) {
+            visible.push({
+              ...backup,
+              isBackup: true,
+              originalProductId: orig.id,
+            });
+          }
         }
-        // If no backup or backup also OOS — show nothing
       }
+      res.json(visible);
+    } catch {
+      res.status(500).json({ message: "Error fetching products" });
     }
-
-    res.json(visible);
-  } catch {
-    res.status(500).json({ message: "Error fetching products" });
-  }
-});
-
+  });
 
   app.get("/api/products/:id", async (req, res) => {
     try {
@@ -213,60 +152,415 @@ app.get("/api/products", async (_req, res) => {
     }
   });
 
-  // ========= Orders =========
+  app.get("/api/cart", async (req, res) => {
+    try {
+      const token = req.headers.authorization?.replace("Bearer ", "");
+      if (!token) return res.status(401).json({ message: "No token provided" });
+      const session = await storage.getSession(token);
+      if (!session) return res.status(401).json({ message: "Invalid session" });
+      const items = await storage.getCartItems(session.employeeId);
+      const detailedItems = await Promise.all(
+        items.map(async (item) => ({
+          ...item,
+          product: await storage.getProduct(item.productId),
+        }))
+      );
+      res.json(detailedItems);
+    } catch {
+      res.status(500).json({ message: "Error fetching cart" });
+    }
+  });
+
+  app.post("/api/cart", async (req, res) => {
+    try {
+      const token = req.headers.authorization?.replace("Bearer ", "");
+      if (!token) return res.status(401).json({ message: "No token provided" });
+
+      const session = await storage.getSession(token);
+      if (!session) return res.status(401).json({ message: "Invalid session" });
+
+      const employee = await storage.getEmployee(session.employeeId);
+      if (!employee) return res.status(404).json({ message: "Employee not found" });
+
+      // validate payload with zod, but force employeeId from session
+      const data = insertCartItemSchema.parse({
+        ...req.body,
+        employeeId: employee.id,
+      });
+
+      // product checks
+      const product = await storage.getProduct(data.productId);
+      if (!product) return res.status(404).json({ message: "Product not found" });
+
+      const selectedColor = data.selectedColor ?? null;
+      const requestedQty = data.quantity ?? 1;
+
+      if ((product.stock || 0) < requestedQty) {
+        return res.status(400).json({ message: "Insufficient stock" });
+      }
+
+      // find existing line via storage API (no direct db access)
+      const currentItems = await storage.getCartItems(employee.id);
+      const existing = currentItems.find(
+        (it) =>
+          it.productId === data.productId &&
+          // treat undefined and null the same for selectedColor matching
+          (it.selectedColor ?? null) === (selectedColor ?? null)
+      );
+
+      if (existing) {
+        const newQuantity = (existing.quantity || 1) + requestedQty;
+        if ((product.stock || 0) < newQuantity) {
+          return res.status(400).json({ message: "Insufficient stock" });
+        }
+        const updated = await storage.updateCartItem(existing.id, { quantity: newQuantity });
+        return res.json(updated);
+      }
+
+      // create new line
+      const item = await storage.createCartItem({
+        employeeId: employee.id,
+        productId: data.productId,
+        selectedColor: selectedColor ?? undefined,
+        quantity: requestedQty,
+      });
+      res.json(item);
+    } catch (error: any) {
+      console.error("Cart POST error:", error);
+      res.status(400).json({ message: "Invalid cart item data", details: error.message });
+    }
+  });
+
+  app.put("/api/cart/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { quantity } = req.body;
+      if (!Number.isInteger(quantity) || quantity < 1) {
+        return res.status(400).json({ message: "Invalid quantity" });
+      }
+      const item = await storage.getCartItem(id);
+      if (!item) return res.status(404).json({ message: "Cart item not found" });
+      const product = await storage.getProduct(item.productId);
+      if (!product) return res.status(404).json({ message: "Product not found" });
+      if ((product.stock || 0) < quantity) {
+        return res.status(400).json({ message: "Insufficient stock" });
+      }
+      const updated = await storage.updateCartItem(id, { quantity });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Cart PUT error:", error);
+      res.status(500).json({ message: "Error updating cart item", details: error.message });
+    }
+  });
+
+  app.delete("/api/cart/:id", async (req, res) => {
+    try {
+      const ok = await storage.removeCartItem(req.params.id);
+      if (!ok) return res.status(404).json({ message: "Cart item not found" });
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("Cart DELETE error:", error);
+      res.status(500).json({ message: "Error removing cart item", details: error.message });
+    }
+  });
+
   app.post("/api/orders", async (req, res) => {
     try {
       const token = req.headers.authorization?.replace("Bearer ", "");
       if (!token) return res.status(401).json({ message: "No token provided" });
       const session = await storage.getSession(token);
       if (!session) return res.status(401).json({ message: "Invalid session" });
-
-      const existingOrder = await storage.getOrderByEmployeeId(session.employeeId);
-      if (existingOrder) return res.status(400).json({ message: "Employee can only select one product" });
-
-      const { productId, selectedColor } = req.body;
-      const product = await storage.getProduct(productId);
-      if (!product) return res.status(404).json({ message: "Product not found" });
-      if ((product.stock || 0) <= 0) return res.status(400).json({ message: "Product out of stock" });
-
-      await storage.updateProduct(productId, { stock: (product.stock || 0) - 1 });
-      const order = await storage.createOrder({ employeeId: session.employeeId, productId, selectedColor });
       const employee = await storage.getEmployee(session.employeeId);
-      res.json({ order, product, employee });
-    } catch {
-      res.status(500).json({ message: "Error creating order" });
+      if (!employee) return res.status(404).json({ message: "Employee not found" });
+      const branding = await storage.getBranding();
+      const maxSelections = branding?.maxSelectionsPerUser ?? 1;
+
+      const cartItems = await storage.getCartItems(session.employeeId);
+      if (cartItems.length === 0) return res.status(400).json({ message: "Cart is empty" });
+
+      const employeeOrders = await storage.getOrdersByEmployeeId(session.employeeId);
+      if (maxSelections !== -1 && employeeOrders.length + cartItems.length > maxSelections) {
+        return res.status(400).json({ message: "Selection limit reached" });
+      }
+
+      const inrPerPoint = parseFloat(branding?.inrPerPoint ?? "1");
+      let totalPointsRequired = 0;
+
+      for (const item of cartItems) {
+        const p = await storage.getProduct(item.productId);
+        if (!p || (p.stock || 0) < item.quantity) {
+          return res.status(400).json({ message: `Product ${p?.name || item.productId} unavailable` });
+        }
+        totalPointsRequired += Math.ceil(parseFloat(p.price) / inrPerPoint) * item.quantity;
+      }
+
+      const userPoints = employee.points ?? 0;
+      if (userPoints < totalPointsRequired) {
+        return res.status(400).json({ message: "Insufficient points" });
+      }
+
+      const orders = [];
+      for (const item of cartItems) {
+        const p = await storage.getProduct(item.productId);
+        await storage.updateProduct(item.productId, { stock: (p!.stock || 0) - item.quantity });
+        const order = await storage.createOrder({
+          employeeId: session.employeeId,
+          productId: item.productId,
+          selectedColor: item.selectedColor,
+          quantity: item.quantity,
+          metadata: { usedPoints: Math.ceil(parseFloat(p!.price) / inrPerPoint) * item.quantity },
+        });
+        orders.push({ order, product: p });
+      }
+
+      await storage.updateEmployee(employee.id, { points: userPoints - totalPointsRequired });
+      await storage.clearCart(session.employeeId);
+      const updatedEmployee = await storage.getEmployee(session.employeeId);
+
+      res.json({ orders, employee: updatedEmployee });
+    } catch (error: any) {
+      console.error("Orders POST error:", error);
+      res.status(500).json({ message: "Error creating orders", details: error.message });
     }
   });
 
-  app.get("/api/orders/my-order", async (req, res) => {
+  app.post("/api/orders/create-copay-order", async (req, res) => {
+    try {
+      const token = req.headers.authorization?.replace("Bearer ", "");
+      if (!token) return res.status(401).json({ message: "No token" });
+      const session = await storage.getSession(token);
+      if (!session) return res.status(401).json({ message: "Invalid session" });
+      const employee = await storage.getEmployee(session.employeeId);
+      if (!employee) return res.status(404).json({ message: "Employee not found" });
+
+      const cartItems = await storage.getCartItems(session.employeeId);
+      if (cartItems.length === 0) return res.status(400).json({ message: "Cart is empty" });
+
+      const branding = await storage.getBranding();
+      const maxSelections = branding?.maxSelectionsPerUser ?? 1;
+      const employeeOrders = await storage.getOrdersByEmployeeId(session.employeeId);
+
+      if (maxSelections !== -1 && employeeOrders.length + cartItems.length > maxSelections) {
+        return res.status(400).json({ message: "Selection limit reached" });
+      }
+
+      const inrPerPoint = parseFloat(branding?.inrPerPoint ?? "1");
+      let totalPointsRequired = 0;
+
+      for (const item of cartItems) {
+        const product = await storage.getProduct(item.productId);
+        if (!product || (product.stock || 0) < item.quantity) {
+          return res.status(400).json({ message: `Product ${product?.name || item.productId} unavailable` });
+        }
+        totalPointsRequired += Math.ceil(parseFloat(product.price) / inrPerPoint) * item.quantity;
+      }
+
+      const userPoints = employee.points ?? 0;
+      if (userPoints >= totalPointsRequired) {
+        return res.status(400).json({ message: "Sufficient points, use normal checkout" });
+      }
+
+      const deficitPoints = totalPointsRequired - userPoints;
+      const copayInr = Math.ceil(deficitPoints * inrPerPoint);
+
+      const merchantId = "PGTESTPAYUAT";
+      const saltKey = "099eb0cd-02cf-4e2a-8aca-3e6c6aff0399";
+      const saltIndex = process.env.PHONEPE_SALT_INDEX || "1";
+      const apiUrl = process.env.PHONEPE_API_URL || "https://api-preprod.phonepe.com/apis/pg-sandbox";
+
+      if (!merchantId || !saltKey) {
+        return res.status(500).json({ message: "PhonePe not configured" });
+      }
+
+      const merchantTransactionId = `TXN_${Date.now()}`;
+      const payload = {
+        merchantId,
+        merchantTransactionId,
+        merchantUserId: employee.id,
+        amount: copayInr * 100, // in paise
+        redirectUrl: "http://localhost:5000/cart",
+        redirectMode: "REDIRECT",
+        callbackUrl: "http://localhost:5000/api/orders/phonepe-callback",
+        mobileNumber: employee.phoneNumber?.replace(/^\+91/, ""),
+        paymentInstrument: {
+          type: "PAY_PAGE",
+        },
+      };
+
+      const base64Payload = Buffer.from(JSON.stringify(payload)).toString("base64");
+      const endpoint = "/pg/v1/pay";
+      const stringToHash = base64Payload + endpoint + saltKey;
+      const sha256 = crypto.createHash("sha256").update(stringToHash).digest("hex");
+      const xVerify = sha256 + "###" + saltIndex;
+
+      const response = await fetch(`${apiUrl}${endpoint}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-VERIFY": xVerify,
+        },
+        body: JSON.stringify({ request: base64Payload }),
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        return res.status(500).json({ message: "Failed to initiate PhonePe payment", details: result });
+      }
+
+      res.json({
+        paymentUrl: result.data.instrumentResponse.redirectInfo.url,
+        merchantTransactionId,
+      });
+    } catch (error: any) {
+      console.error("create-copay-order error:", error);
+      res.status(500).json({ message: "Failed to create copay order", details: error.message });
+    }
+  });
+
+  app.post("/api/orders/phonepe-callback", async (req, res) => {
+    try {
+      const { code } = req.body;
+      if (code !== "PAYMENT_SUCCESS") {
+        return res.status(200).json({ success: false });
+      }
+      res.redirect("/cart?payment=success");
+    } catch (error: any) {
+      console.error("PhonePe callback error:", error);
+      res.redirect("/cart?payment=failure");
+    }
+  });
+
+  app.post("/api/orders/verify-copay", async (req, res) => {
+    try {
+      const { merchantTransactionId } = req.body;
+      const merchantId = process.env.PHONEPE_MERCHANT_ID;
+      const saltKey = process.env.PHONEPE_SALT_KEY;
+      const saltIndex = process.env.PHONEPE_SALT_INDEX || "1";
+      const apiUrl = process.env.PHONEPE_API_URL || "https://api-preprod.phonepe.com/apis/pg-sandbox";
+
+      const endpoint = `/pg/v1/status/${merchantId}/${merchantTransactionId}`;
+      const stringToHash = endpoint + saltKey;
+      const sha256 = crypto.createHash("sha256").update(stringToHash).digest("hex");
+      const xVerify = sha256 + "###" + saltIndex;
+
+      const response = await fetch(`${apiUrl}${endpoint}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "X-VERIFY": xVerify,
+          "X-MERCHANT-ID": merchantId!,
+        },
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success || result.code !== "PAYMENT_SUCCESS") {
+        return res.status(400).json({ message: "Payment not completed" });
+      }
+
+      const token = req.headers.authorization?.replace("Bearer ", "");
+      if (!token) return res.status(401).json({ message: "No token" });
+
+      const session = await storage.getSession(token);
+      if (!session) return res.status(401).json({ message: "Invalid session" });
+
+      const employee = await storage.getEmployee(session.employeeId);
+      if (!employee) return res.status(404).json({ message: "Employee not found" });
+
+      const branding = await storage.getBranding();
+      const maxSelections = branding?.maxSelectionsPerUser ?? 1;
+
+      const employeeOrders = await storage.getOrdersByEmployeeId(session.employeeId);
+      const cartItems = await storage.getCartItems(session.employeeId);
+      if (cartItems.length === 0) return res.status(400).json({ message: "Cart is empty" });
+      if (maxSelections !== -1 && employeeOrders.length + cartItems.length > maxSelections) {
+        return res.status(400).json({ message: "Selection limit reached" });
+      }
+
+      const inrPerPoint = parseFloat(branding?.inrPerPoint ?? "1");
+      let totalPointsRequired = 0;
+      for (const item of cartItems) {
+        const product = await storage.getProduct(item.productId);
+        if (!product || (product.stock || 0) < item.quantity) {
+          return res.status(400).json({ message: `Product ${product?.name || item.productId} unavailable` });
+        }
+        totalPointsRequired += Math.ceil(parseFloat(product.price) / inrPerPoint) * item.quantity;
+      }
+
+      const userPoints = employee.points ?? 0;
+      if (userPoints >= totalPointsRequired) {
+        return res.status(400).json({ message: "Sufficient points" });
+      }
+
+      const deficitPoints = totalPointsRequired - userPoints;
+      const copayInr = Math.ceil(deficitPoints * inrPerPoint);
+      const paidAmount = result.data.amount / 100;
+
+      if (paidAmount !== copayInr) {
+        return res.status(400).json({ message: "Amount mismatch" });
+      }
+
+      const orders = [];
+      for (const item of cartItems) {
+        const product = await storage.getProduct(item.productId);
+        await storage.updateProduct(item.productId, { stock: (product!.stock || 0) - item.quantity });
+        const order = await storage.createOrder({
+          employeeId: employee.id,
+          productId: item.productId,
+          selectedColor: item.selectedColor,
+          quantity: item.quantity,
+          metadata: {
+            usedPoints: Math.ceil(parseFloat(product!.price) / inrPerPoint) * item.quantity,
+            copayInr,
+            paymentId: result.data.transactionId,
+            phonepeOrderId: merchantTransactionId,
+          },
+        });
+        orders.push({ order, product });
+      }
+
+      await storage.updateEmployee(employee.id, { points: 0 });
+      await storage.clearCart(employee.id);
+      const updatedEmployee = await storage.getEmployee(employee.id);
+
+      res.json({ orders, employee: updatedEmployee });
+    } catch (error: any) {
+      console.error("verify-copay error:", error);
+      res.status(400).json({ message: "Invalid payment", details: error.message });
+    }
+  });
+
+  app.get("/api/orders/my-orders", async (req, res) => {
     try {
       const token = req.headers.authorization?.replace("Bearer ", "");
       if (!token) return res.status(401).json({ message: "No token provided" });
       const session = await storage.getSession(token);
       if (!session) return res.status(401).json({ message: "Invalid session" });
-      const order = await storage.getOrderByEmployeeId(session.employeeId);
-      if (!order) return res.status(404).json({ message: "No order found" });
-      const product = await storage.getProduct(order.productId);
-      const employee = await storage.getEmployee(order.employeeId);
-      res.json({ order, product, employee });
+      const orders = await storage.getOrdersByEmployeeId(session.employeeId);
+      const detailedOrders = await Promise.all(
+        orders.map(async (order) => ({
+          order,
+          product: await storage.getProduct(order.productId),
+          employee: await storage.getEmployee(order.employeeId),
+        }))
+      );
+      res.json(detailedOrders);
     } catch {
-      res.status(500).json({ message: "Error fetching order" });
+      res.status(500).json({ message: "Error fetching orders" });
     }
   });
 
-  // ========= Admin: stats & lists =========
   app.get("/api/admin/stats", async (_req, res) => {
     try {
-      const employees = await storage.getAllEmployees();
-      const products = await storage.getAllProducts();
-      const orders = await storage.getAllOrders();
+      const emps = await storage.getAllEmployees();
+      const prods = await storage.getAllProducts();
+      const ords = await storage.getAllOrders();
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const ordersToday = orders.filter((o) => o.orderDate && o.orderDate >= today);
-      const lockedAccounts = employees.filter((e) => e.isLocked);
+      const ordersToday = ords.filter((o) => o.orderDate && o.orderDate >= today);
+      const lockedAccounts = emps.filter((e) => e.isLocked);
       res.json({
-        totalEmployees: employees.length,
-        totalProducts: products.length,
+        totalEmployees: emps.length,
+        totalProducts: prods.length,
         ordersToday: ordersToday.length,
         lockedAccounts: lockedAccounts.length,
       });
@@ -277,8 +571,8 @@ app.get("/api/products", async (_req, res) => {
 
   app.get("/api/admin/employees", async (_req, res) => {
     try {
-      const employees = await storage.getAllEmployees();
-      res.json(employees);
+      const emps = await storage.getAllEmployees();
+      res.json(emps);
     } catch {
       res.status(500).json({ message: "Error fetching employees" });
     }
@@ -286,8 +580,12 @@ app.get("/api/products", async (_req, res) => {
 
   app.post("/api/admin/employees", async (req, res) => {
     try {
-      const employeeData = insertEmployeeSchema.parse(req.body);
-      const employee = await storage.createEmployee(employeeData);
+      const body = insertEmployeeSchema.parse(req.body);
+      const phone = normalizePhonePlus(body.phoneNumber);
+      if (!phone) return res.status(400).json({ message: "Invalid phoneNumber" });
+      const exists = await storage.getEmployeeByPhone(phone);
+      if (exists) return res.status(409).json({ message: "Employee already exists (phone)" });
+      const employee = await storage.createEmployee({ ...body, phoneNumber: phone });
       res.json(employee);
     } catch {
       res.status(400).json({ message: "Invalid employee data" });
@@ -299,24 +597,48 @@ app.get("/api/products", async (_req, res) => {
       const rows = Array.isArray(req.body) ? req.body : [];
       let inserted = 0;
       let skipped = 0;
+
       for (const r of rows) {
         try {
-          const exists = await storage.getEmployeeByEmployeeId(r.employeeId);
-          if (exists) {
+          const rawPhone = r.phoneNumber ? String(r.phoneNumber).trim() : "";
+          const phone = normalizePhonePlus(rawPhone);
+          if (!phone) {
             skipped++;
             continue;
           }
+
+          const exists = await storage.getEmployeeByPhone(phone);
+          if (exists) {
+            const pts = Number(r.points);
+            if (Number.isFinite(pts)) {
+              await storage.updateEmployee(exists.id, { points: pts });
+            }
+            skipped++;
+            continue;
+          }
+
+          const firstName = String(r.firstName || "").trim();
+          const lastName = String(r.lastName || "").trim();
+          const points = Number.isFinite(Number(r.points)) ? Number(r.points) : 0;
+
+          if (!firstName || !lastName) {
+            skipped++;
+            continue;
+          }
+
           await storage.createEmployee({
-            employeeId: String(r.employeeId),
-            firstName: String(r.firstName),
-            lastName: String(r.lastName),
-            yearOfBirth: Number(r.yearOfBirth),
-          });
+            firstName,
+            lastName,
+            phoneNumber: phone,
+            points,
+          } as any);
+
           inserted++;
         } catch {
           skipped++;
         }
       }
+
       res.json({ inserted, skipped });
     } catch {
       res.status(400).json({ message: "Invalid bulk payload" });
@@ -326,7 +648,13 @@ app.get("/api/products", async (_req, res) => {
   app.put("/api/admin/employees/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      const updated = await storage.updateEmployee(id, req.body);
+      const updates = { ...req.body };
+      if (updates.phoneNumber !== undefined) {
+        const phone = normalizePhonePlus(updates.phoneNumber);
+        if (!phone) return res.status(400).json({ message: "Invalid phoneNumber" });
+        updates.phoneNumber = phone;
+      }
+      const updated = await storage.updateEmployee(id, updates);
       if (!updated) return res.status(404).json({ message: "Employee not found" });
       res.json(updated);
     } catch {
@@ -348,9 +676,9 @@ app.get("/api/products", async (_req, res) => {
 
   app.get("/api/admin/orders", async (_req, res) => {
     try {
-      const orders = await storage.getAllOrders();
+      const ords = await storage.getAllOrders();
       const withDetails = await Promise.all(
-        orders.map(async (o) => ({
+        ords.map(async (o) => ({
           ...o,
           employee: await storage.getEmployee(o.employeeId),
           product: await storage.getProduct(o.productId),
@@ -395,8 +723,8 @@ app.get("/api/products", async (_req, res) => {
 
   app.get("/api/admin/branding", async (_req, res) => {
     try {
-      const branding = await storage.getBranding();
-      res.json(branding);
+      const b = await storage.getBranding();
+      res.json(b);
     } catch {
       res.status(500).json({ message: "Error fetching branding" });
     }
@@ -404,21 +732,25 @@ app.get("/api/products", async (_req, res) => {
 
   app.put("/api/admin/branding", async (req, res) => {
     try {
-      const branding = await storage.updateBranding(req.body);
-      res.json(branding);
+      const b = await storage.updateBranding(req.body);
+      res.json(b);
     } catch {
       res.status(500).json({ message: "Error updating branding" });
     }
   });
 
-  // Debug
-  app.post("/api/debug/reset-employee/:employeeId", async (req, res) => {
+  app.get("/api/auth/lookup-by-phone", async (req, res) => {
+    res.set("Cache-Control", "no-store");
     try {
-      const success = await storage.resetEmployeeLoginAttempts(req.params.employeeId);
-      if (success) return res.json({ message: "Employee login attempts reset successfully" });
-      res.status(404).json({ message: "Employee not found" });
+      const raw = String(req.query.phoneNumber || "");
+      const digits = raw.replace(/\D+/g, "");
+      if (!digits) return res.status(400).json({ message: "phoneNumber required" });
+      const phone = digits.length == 10 ? `+91${digits}` : `+${digits}`;
+      const emp = await storage.getEmployeeByPhone(phone);
+      if (!emp) return res.status(404).json({ message: "Not found" });
+      res.json({ firstName: emp.firstName, lastName: emp.lastName });
     } catch {
-      res.status(500).json({ message: "Error resetting employee" });
+      res.status(500).json({ message: "Lookup failed" });
     }
   });
 }

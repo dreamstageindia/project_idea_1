@@ -37,6 +37,8 @@ import {
   ArrowLeft,
   ArrowRight,
   FileDown,
+  Download as DownloadIcon,
+  CreditCard,
 } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 
@@ -44,12 +46,14 @@ const ADMIN_PASSWORD = "12345678";
 
 type Employee = {
   id: string;
-  employeeId: string;
   firstName: string;
   lastName: string;
-  yearOfBirth: number;
+  phoneNumber: string | null;
+  points: number;
   loginAttempts: number;
   isLocked: boolean;
+
+  employeeId?: string | null; // legacy
 };
 
 type Product = {
@@ -75,7 +79,23 @@ type Branding = {
   accentColor: string;
   bannerUrl: string | null;
   bannerText: string | null;
+  inrPerPoint: string; // <-- matches DB (decimal returned as string)
+  maxSelectionsPerUser: number;
   updatedAt: string;
+};
+
+type Order = {
+  id: string;
+  orderId: string;
+  employeeId: string;
+  productId: string;
+  selectedColor: string | null;
+  quantity: number;
+  status: string;
+  orderDate: string;
+  metadata: Record<string, any> | null;
+  employee: Employee;
+  product: Product;
 };
 
 // helper: upload files to server
@@ -105,7 +125,6 @@ function removeAt<T>(arr: T[], index: number): T[] {
 function csvEscape(value: unknown): string {
   if (value === null || value === undefined) return "";
   const s = String(value);
-  // Escape quotes by doubling them, and wrap with quotes if comma/quote/newline present
   const needsWrap = /[",\n\r]/.test(s);
   const escaped = s.replace(/"/g, '""');
   return needsWrap ? `"${escaped}"` : escaped;
@@ -162,9 +181,8 @@ export default function Admin() {
 
   // queries
   const { data: stats } = useQuery({ queryKey: ["/api/admin/stats"], enabled: unlocked });
-  const { data: orders = [] } = useQuery({ queryKey: ["/api/admin/orders"], enabled: unlocked });
+  const { data: orders = [] } = useQuery<Order[]>({ queryKey: ["/api/admin/orders"], enabled: unlocked });
   const { data: employees = [] } = useQuery<Employee[]>({ queryKey: ["/api/admin/employees"], enabled: unlocked });
-  // NOTE: admin list (full, without backup substitution)
   const { data: products = [] } = useQuery<Product[]>({ queryKey: ["/api/products-admin"], enabled: unlocked });
   const { data: branding } = useQuery<Branding>({ queryKey: ["/api/admin/branding"], enabled: unlocked });
 
@@ -197,7 +215,7 @@ export default function Admin() {
   });
 
   const bulkEmployeesMutation = useMutation({
-    mutationFn: async (rows: Array<{ employeeId: string; firstName: string; lastName: string; yearOfBirth: number }>) => {
+    mutationFn: async (rows: Array<{ firstName: string; lastName: string; phoneNumber: string; points: number }>) => {
       const res = await apiRequest("POST", `/api/admin/employees/bulk`, rows);
       return res.json();
     },
@@ -259,29 +277,75 @@ export default function Admin() {
     onError: (e: any) => toast({ title: "Branding update failed", description: e.message, variant: "destructive" }),
   });
 
-  // CSV parsing
+  // CSV/XLSX parsing (NEW)
   const [csvFile, setCsvFile] = useState<File | null>(null);
-  const parseCsv = async (file: File) => {
+
+  async function parseAnySpreadsheet(file: File) {
+    const name = (file.name || "").toLowerCase();
+    if (name.endsWith(".xlsx") || file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
+      const XLSX = await import(/* webpackChunkName: "xlsx" */ "xlsx");
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<any>(sheet, { defval: "" });
+      return rows.map((r) => ({
+        firstName: String(r.firstName || r["first name"] || r["First Name"] || "").trim(),
+        lastName: String(r.lastName || r["last name"] || r["Last Name"] || "").trim(),
+        phoneNumber: String(r.phoneNumber || r["phone number"] || r["Phone Number"] || "").trim(),
+        points: Number(r.points ?? r["Points"] ?? 0),
+      }));
+    }
+    // fallback CSV
     const text = await file.text();
-    const lines = text.split(/\r?\n/).filter(Boolean);
+    const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
     const header = lines[0].split(",").map((s) => s.trim());
     const idx = {
-      employeeId: header.indexOf("employeeId"),
       firstName: header.indexOf("firstName"),
       lastName: header.indexOf("lastName"),
-      yearOfBirth: header.indexOf("yearOfBirth"),
+      phoneNumber: header.indexOf("phoneNumber"),
+      points: header.indexOf("points"),
     };
-    if (Object.values(idx).some((i) => i === -1)) throw new Error("CSV must have headers: employeeId,firstName,lastName,yearOfBirth");
+    if (Object.values(idx).some((i) => i === -1)) {
+      throw new Error("File must have headers: firstName,lastName,phoneNumber,points");
+    }
     const rows = lines.slice(1).map((line) => {
       const cols = line.split(",").map((s) => s.trim().replace(/^"|"$/g, ""));
       return {
-        employeeId: cols[idx.employeeId],
         firstName: cols[idx.firstName],
         lastName: cols[idx.lastName],
-        yearOfBirth: Number(cols[idx.yearOfBirth]),
+        phoneNumber: cols[idx.phoneNumber],
+        points: Number(cols[idx.points]),
       };
     });
-    return rows.filter((r) => r.employeeId && r.firstName && r.lastName && Number.isFinite(r.yearOfBirth));
+    return rows;
+  }
+
+  // Download sample (CSV and XLSX)
+  const downloadSample = async () => {
+    const rows = [
+      { firstName: "bharath", lastName: "c", phoneNumber: "6361679383", points: 2000 },
+      { firstName: "sita", lastName: "r", phoneNumber: "+91 9876543210", points: 1500 },
+    ];
+
+    // CSV
+    const header = "firstName,lastName,phoneNumber,points";
+    const csvRows = rows.map((r) =>
+      [r.firstName, r.lastName, r.phoneNumber, String(r.points)].map(csvEscape).join(",")
+    );
+    const csv = [header, ...csvRows].join("\r\n");
+    downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), "employees-sample.csv");
+
+    // XLSX
+    try {
+      const XLSX = await import(/* webpackChunkName: "xlsx" */ "xlsx");
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Employees");
+      const out = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+      downloadBlob(new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), "employees-sample.xlsx");
+    } catch {
+      // If xlsx not available at runtime, we still delivered CSV
+    }
   };
 
   // Employee inline edit state
@@ -290,10 +354,10 @@ export default function Admin() {
   const startEditEmp = (emp: Employee) => {
     setEditingEmployeeId(emp.id);
     setEditEmpDraft({
-      employeeId: emp.employeeId,
       firstName: emp.firstName,
       lastName: emp.lastName,
-      yearOfBirth: emp.yearOfBirth,
+      phoneNumber: emp.phoneNumber || "",
+      points: emp.points,
     });
   };
   const saveEditEmp = () => {
@@ -318,18 +382,29 @@ export default function Admin() {
   const [newProduct, setNewProduct] = useState<Partial<Product>>(defaultNewProduct);
   const [newProductImages, setNewProductImages] = useState<string[]>([]);
 
-  // Branding upload state
+  // Branding local state
   const [logoUploading, setLogoUploading] = useState(false);
   const [bannerUploading, setBannerUploading] = useState(false);
-
-  // Branding color picker local state
   const [primaryColor, setPrimaryColor] = useState("#1e40af");
   const [accentColor, setAccentColor] = useState("#f97316");
+  const [inrPerPoint, setInrPerPoint] = useState("1.00");
+  const [maxSelections, setMaxSelections] = useState("1");
+  const [customMax, setCustomMax] = useState("");
 
   useEffect(() => {
     if (branding) {
       setPrimaryColor(branding.primaryColor || "#1e40af");
       setAccentColor(branding.accentColor || "#f97316");
+      setInrPerPoint(branding.inrPerPoint || "1.00");
+      const val = branding.maxSelectionsPerUser;
+      if (val === -1) {
+        setMaxSelections("infinite");
+      } else if ([1, 2, 5, 10].includes(val)) {
+        setMaxSelections(String(val));
+      } else {
+        setMaxSelections("custom");
+        setCustomMax(String(val));
+      }
     }
   }, [branding]);
 
@@ -366,18 +441,21 @@ export default function Admin() {
   const [exportOpen, setExportOpen] = useState(false);
   const ORDER_EXPORT_COLUMNS = [
     { key: "orderId", label: "Order ID" },
-    { key: "employeeId", label: "Employee ID" },
     { key: "employeeName", label: "Employee Name" },
+    { key: "employeePhone", label: "Employee Phone" },
     { key: "productName", label: "Product Name" },
     { key: "selectedColor", label: "Color" },
+    { key: "quantity", label: "Quantity" },
     { key: "price", label: "Price" },
+    { key: "pointsUsed", label: "Points Used" },
+    { key: "copayAmount", label: "Copay Amount" },
     { key: "orderDate", label: "Order Date" },
     { key: "status", label: "Status" },
   ] as const;
 
   type ExportKey = (typeof ORDER_EXPORT_COLUMNS)[number]["key"];
   const [selectedExportCols, setSelectedExportCols] = useState<ExportKey[]>(
-    ORDER_EXPORT_COLUMNS.map((c) => c.key) // default: all selected
+    ORDER_EXPORT_COLUMNS.map((c) => c.key)
   );
 
   const toggleExportCol = (key: ExportKey) => {
@@ -404,18 +482,23 @@ export default function Admin() {
         switch (key) {
           case "orderId":
             return csvEscape(o.orderId);
-          case "employeeId":
-            return csvEscape(o.employee?.employeeId ?? "");
           case "employeeName":
             return csvEscape(`${o.employee?.firstName ?? ""} ${o.employee?.lastName ?? ""}`.trim());
+          case "employeePhone":
+            return csvEscape(o.employee?.phoneNumber ?? "");
           case "productName":
             return csvEscape(o.product?.name ?? "");
           case "selectedColor":
             return csvEscape(o.selectedColor ?? "");
+          case "quantity":
+            return csvEscape(o.quantity ?? 1);
           case "price":
             return csvEscape(o.product?.price ?? "");
+          case "pointsUsed":
+            return csvEscape(o.metadata?.usedPoints ?? 0);
+          case "copayAmount":
+            return csvEscape(o.metadata?.copayInr ?? 0);
           case "orderDate":
-            // Format as YYYY-MM-DD HH:mm
             try {
               const d = new Date(o.orderDate);
               const y = d.getFullYear();
@@ -557,7 +640,9 @@ export default function Admin() {
                           <TableCell>
                             <div>
                               <p className="font-medium">{order.employee?.firstName} {order.employee?.lastName}</p>
-                              <p className="text-sm text-muted-foreground">{order.employee?.employeeId}</p>
+                              {order.employee?.phoneNumber && (
+                                <p className="text-sm text-muted-foreground">{order.employee?.phoneNumber}</p>
+                              )}
                             </div>
                           </TableCell>
                           <TableCell>{order.product?.name}</TableCell>
@@ -581,30 +666,41 @@ export default function Admin() {
         {activeSection === "employees" && (
           <div className="space-y-8">
             <Card>
-              <CardHeader>
-                <CardTitle>Upload Employees (CSV)</CardTitle>
+              <CardHeader className="flex items-center justify-between">
+                <CardTitle>Upload Employees (CSV / Excel)</CardTitle>
+                <Button variant="outline" size="sm" onClick={downloadSample}>
+                  <DownloadIcon className="h-4 w-4 mr-2" />
+                  Download sample
+                </Button>
               </CardHeader>
               <CardContent className="space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  CSV headers required: employeeId,firstName,lastName,yearOfBirth
+                  File must include headers: <code>firstName,lastName,phoneNumber,points</code>
                 </p>
-                <Input type="file" accept=".csv,text/csv" onChange={(e) => setCsvFile(e.target.files?.[0] ?? null)} />
+                <Input
+                  type="file"
+                  accept=".csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx"
+                  onChange={(e) => setCsvFile(e.target.files?.[0] ?? null)}
+                />
                 <div className="flex gap-2">
                   <Button
                     onClick={async () => {
                       if (!csvFile) {
-                        toast({ title: "Select a CSV", variant: "destructive" });
+                        toast({ title: "Select a file", variant: "destructive" });
                         return;
                       }
                       try {
-                        const rows = await parseCsv(csvFile);
-                        if (rows.length === 0) {
+                        const parsed = await parseAnySpreadsheet(csvFile);
+                        const rows = parsed.filter(
+                          (r) => r.firstName && r.lastName && r.phoneNumber && Number.isFinite(r.points)
+                        );
+                        if (!rows.length) {
                           toast({ title: "No valid rows", variant: "destructive" });
                           return;
                         }
                         bulkEmployeesMutation.mutate(rows);
                       } catch (err: any) {
-                        toast({ title: "Parse failed", description: err.message, variant: "destructive" });
+                        toast({ title: "Parse failed", description: String(err?.message || err), variant: "destructive" });
                       }
                     }}
                     disabled={bulkEmployeesMutation.isPending}
@@ -625,12 +721,12 @@ export default function Admin() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Employee ID</TableHead>
                         <TableHead>Name</TableHead>
-                        <TableHead>Year of Birth</TableHead>
+                        <TableHead>Phone</TableHead>
+                        <TableHead>Points</TableHead>
                         <TableHead>Login Attempts</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead className="w-[220px]">Actions</TableHead>
+                        <TableHead className="w-[260px]">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -638,18 +734,6 @@ export default function Admin() {
                         const isEditing = editingEmployeeId === emp.id;
                         return (
                           <TableRow key={emp.id}>
-                            <TableCell className="font-mono">
-                              {isEditing ? (
-                                <Input
-                                  value={editEmpDraft.employeeId || ""}
-                                  onChange={(e) =>
-                                    setEditEmpDraft((d) => ({ ...d, employeeId: e.target.value }))
-                                  }
-                                />
-                              ) : (
-                                emp.employeeId
-                              )}
-                            </TableCell>
                             <TableCell>
                               {isEditing ? (
                                 <div className="flex gap-2">
@@ -675,17 +759,30 @@ export default function Admin() {
                             <TableCell>
                               {isEditing ? (
                                 <Input
+                                  value={editEmpDraft.phoneNumber || ""}
+                                  onChange={(e) =>
+                                    setEditEmpDraft((d) => ({ ...d, phoneNumber: e.target.value }))
+                                  }
+                                  placeholder="+91XXXXXXXXXX"
+                                />
+                              ) : (
+                                emp.phoneNumber || "—"
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {isEditing ? (
+                                <Input
                                   type="number"
-                                  value={String(editEmpDraft.yearOfBirth ?? "")}
+                                  value={String(editEmpDraft.points ?? 0)}
                                   onChange={(e) =>
                                     setEditEmpDraft((d) => ({
                                       ...d,
-                                      yearOfBirth: Number(e.target.value),
+                                      points: Number(e.target.value) || 0,
                                     }))
                                   }
                                 />
                               ) : (
-                                emp.yearOfBirth
+                                emp.points
                               )}
                             </TableCell>
                             <TableCell>{emp.loginAttempts}</TableCell>
@@ -929,7 +1026,7 @@ export default function Admin() {
                     onClick={() =>
                       createProductMutation.mutate({
                         ...newProduct,
-                        images: newProductImages, // save the reordered images
+                        images: newProductImages,
                       })
                     }
                     disabled={createProductMutation.isPending}
@@ -1020,7 +1117,10 @@ export default function Admin() {
                       <TableHead>Employee</TableHead>
                       <TableHead>Product</TableHead>
                       <TableHead>Color</TableHead>
+                      <TableHead>Quantity</TableHead>
                       <TableHead>Price</TableHead>
+                      <TableHead>Points Used</TableHead>
+                      <TableHead>Amount Paid</TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead>Status</TableHead>
                     </TableRow>
@@ -1032,12 +1132,27 @@ export default function Admin() {
                         <TableCell>
                           <div>
                             <p className="font-medium">{order.employee?.firstName} {order.employee?.lastName}</p>
-                            <p className="text-sm text-muted-foreground">{order.employee?.employeeId}</p>
+                            <p className="text-sm text-muted-foreground">{order.employee?.phoneNumber}</p>
                           </div>
                         </TableCell>
                         <TableCell>{order.product?.name}</TableCell>
                         <TableCell>{order.selectedColor}</TableCell>
+                        <TableCell>{order.quantity}</TableCell>
                         <TableCell className="font-semibold">₹{order.product?.price}</TableCell>
+                        <TableCell>{order.metadata?.usedPoints ?? 0}</TableCell>
+                        <TableCell>
+                          {order.metadata?.copayInr ? (
+                            <Button
+                              variant="link"
+                              className="p-0"
+                              onClick={() => openPaymentModal(order.metadata)}
+                            >
+                              ₹{order.metadata.copayInr}
+                            </Button>
+                          ) : (
+                            "₹0"
+                          )}
+                        </TableCell>
                         <TableCell>{new Date(order.orderDate).toLocaleDateString()}</TableCell>
                         <TableCell>
                           <Badge className="bg-green-100 text-green-800">{order.status}</Badge>
@@ -1054,7 +1169,7 @@ export default function Admin() {
         {activeSection === "branding" && (
           <Card>
             <CardHeader>
-              <CardTitle>Theme Customization</CardTitle>
+              <CardTitle>Theme & Redemption Settings</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid md:grid-cols-2 gap-6">
@@ -1096,7 +1211,7 @@ export default function Admin() {
                 </div>
 
                 {/* Accent color picker + hex */}
-                <div className="space-y-2 md:col-span-2">
+                <div className="space-y-2">
                   <Label>Accent Color</Label>
                   <div className="flex items-center gap-3">
                     <Input
@@ -1122,6 +1237,59 @@ export default function Admin() {
                       style={{ backgroundColor: accentColor }}
                     />
                   </div>
+                </div>
+
+                {/* INR per point (schema field name) */}
+                <div className="space-y-2">
+                  <Label>₹ per 1 point</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={inrPerPoint}
+                    onChange={(e) => setInrPerPoint(e.target.value)}
+                    onBlur={(e) => updateBrandingMutation.mutate({ inrPerPoint: e.target.value })}
+                    placeholder="1.00"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    How many rupees is one point worth? (Used for redemptions)
+                  </p>
+                </div>
+
+                {/* Product selection per user */}
+                <div className="space-y-2">
+                  <Label>Product selections per user</Label>
+                  <select
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={maxSelections}
+                    onChange={(e) => {
+                      setMaxSelections(e.target.value);
+                      let val: number;
+                      if (e.target.value === "infinite") val = -1;
+                      else if (e.target.value === "custom") return; // wait for input
+                      else val = Number(e.target.value);
+                      updateBrandingMutation.mutate({ maxSelectionsPerUser: val });
+                    }}
+                  >
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="5">5</option>
+                    <option value="10">10</option>
+                    <option value="infinite">Infinite</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                  {maxSelections === "custom" && (
+                    <Input
+                      type="number"
+                      min="1"
+                      value={customMax}
+                      onChange={(e) => setCustomMax(e.target.value)}
+                      onBlur={(e) => {
+                        const val = Number(e.target.value) || 1;
+                        updateBrandingMutation.mutate({ maxSelectionsPerUser: val });
+                      }}
+                      placeholder="Enter number"
+                    />
+                  )}
                 </div>
               </div>
 

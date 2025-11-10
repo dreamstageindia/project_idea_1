@@ -1,26 +1,31 @@
+// src/components/product/product-card.tsx
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { ProductCarousel } from "./product-carousel";
-import { CheckCircle, CircleAlert, Eye, Check, X } from "lucide-react";
+import { Eye, ShoppingCart, X } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 
 interface ProductCardProps {
   product: any;
   onView: (product: any) => void;
-  onSelect: (product: any, color?: string) => void;
+  onAddToCart: (product: any, color: string, quantity: number) => void;
 }
 
-export function ProductCard({ product, onView, onSelect }: ProductCardProps) {
+export function ProductCard({ product, onView, onAddToCart }: ProductCardProps) {
   const [selectedColor, setSelectedColor] = useState(product.colors?.[0] || "");
 
+  const { data: branding } = useQuery({
+    queryKey: ["/api/admin/branding"],
+  });
+
+  const inrPerPoint = parseFloat(branding?.inrPerPoint || "1");
+  const pointsRequired = Math.ceil(parseFloat(product.price) / inrPerPoint);
+
   const getColorStyle = (color: string) => {
-    // Check if it's a hex color (starts with # and is 6-7 characters)
     if (color.match(/^#[0-9A-Fa-f]{6}$/)) {
       return "";
     }
-    
-    // Fallback to named colors for backward compatibility
     const colorMap: Record<string, string> = {
       black: "bg-black",
       white: "bg-white border-2 border-gray-300",
@@ -35,7 +40,6 @@ export function ProductCard({ product, onView, onSelect }: ProductCardProps) {
   };
 
   const getColorInlineStyle = (color: string) => {
-    // If it's a hex color, return inline style
     if (color.match(/^#[0-9A-Fa-f]{6}$/)) {
       return { backgroundColor: color };
     }
@@ -45,20 +49,15 @@ export function ProductCard({ product, onView, onSelect }: ProductCardProps) {
   const isOutOfStock = product.stock === 0;
 
   return (
-    <Card 
+    <Card
       className={`product-card shadow-md overflow-hidden border border-border ${
         product.isBackup ? "border-dashed opacity-75" : ""
       }`}
       data-testid={`card-product-${product.id}`}
     >
-      {/* Image Carousel */}
       <div className="h-64 bg-gray-100 relative">
         <ProductCarousel images={product.images || []} alt={product.name} />
-        {product.isBackup && (
-          <div className="absolute top-2 left-2">
-            
-          </div>
-        )}
+        {product.isBackup && <div className="absolute top-2 left-2"></div>}
       </div>
 
       <CardContent className="p-6">
@@ -67,10 +66,7 @@ export function ProductCard({ product, onView, onSelect }: ProductCardProps) {
             {product.name}
           </h3>
         </div>
-        
-        
-        
-        {/* Color Options */}
+
         {product.colors && product.colors.length > 0 && (
           <div className="mb-4">
             <p className="text-sm text-muted-foreground mb-2">Available Colors:</p>
@@ -90,9 +86,10 @@ export function ProductCard({ product, onView, onSelect }: ProductCardProps) {
           </div>
         )}
 
-        
+        <p className="text-2xl font-bold text-primary mb-4" data-testid={`text-points-required-${product.id}`}>
+          {pointsRequired} points
+        </p>
 
-        {/* Action Buttons */}
         <div className="flex space-x-3">
           <Button
             variant="secondary"
@@ -103,7 +100,6 @@ export function ProductCard({ product, onView, onSelect }: ProductCardProps) {
             <Eye className="mr-2 h-4 w-4" />
             View
           </Button>
-          
           {isOutOfStock ? (
             <Button
               variant="secondary"
@@ -118,11 +114,11 @@ export function ProductCard({ product, onView, onSelect }: ProductCardProps) {
             <Button
               variant="default"
               className="flex-1"
-              onClick={() => onSelect(product, selectedColor)}
-              data-testid={`button-select-${product.id}`}
+              onClick={() => onAddToCart(product, selectedColor, 1)}
+              data-testid={`button-add-to-cart-${product.id}`}
             >
-              <Check className="mr-2 h-4 w-4" />
-              Select
+              <ShoppingCart className="mr-2 h-4 w-4" />
+              Add to Cart
             </Button>
           )}
         </div>
