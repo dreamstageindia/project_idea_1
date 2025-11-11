@@ -353,13 +353,7 @@ export default function Dashboard() {
                   Dear {employee?.firstName ? employee.firstName : "User"}
                 </h3>
                 <p className="text-lg opacity-90 mb-6">
-                  This festive season, Quess is delighted to extend its warmest wishes to you and your
-                  loved ones. As a token of our appreciation, we invite you to select a special gift.
-                  Please browse the options below and add them to your cart.
-                  <br />
-                  <strong>Note:</strong> You are eligible to make up to {maxDisplay} selections.
-                  <br />
-                  We hope you enjoy your gift!
+                  Your Text Goes Here
                 </p>
                 {bannerUrl && bannerText ? <p className="text-sm opacity-90 mb-6">{bannerText}</p> : null}
               </div>
