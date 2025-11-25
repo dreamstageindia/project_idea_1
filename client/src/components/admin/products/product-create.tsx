@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,9 @@ export function ProductCreate() {
   const qc = useQueryClient();
   const [newProduct, setNewProduct] = useState<Partial<Product>>(defaultNewProduct);
   const [newProductImages, setNewProductImages] = useState<string[]>([]);
+  const [colorsInput, setColorsInput] = useState<string>("");
+  const [packagesInput, setPackagesInput] = useState<string>("");
+  const [specificationsInput, setSpecificationsInput] = useState<string>("");
   
   const { data: products = [] } = useQuery<Product[]>({ 
     queryKey: ["/api/products-admin"] 
@@ -50,6 +53,9 @@ export function ProductCreate() {
       toast({ title: "Product created" });
       setNewProduct(defaultNewProduct);
       setNewProductImages([]);
+      setColorsInput("");
+      setPackagesInput("");
+      setSpecificationsInput("");
     },
     onError: (e: any) => toast({ 
       title: "Create failed", 
@@ -58,28 +64,22 @@ export function ProductCreate() {
     }),
   });
 
-  const handleCreate = () => {
-    createProductMutation.mutate({
-      ...newProduct,
-      images: newProductImages,
-    });
-  };
+  // Update colors when colorsInput changes
+  const updateColorsFromInput = useCallback((input: string) => {
+    const colorsArray = input.split(",").map(s => s.trim()).filter(Boolean);
+    setNewProduct(prev => ({ ...prev, colors: colorsArray }));
+  }, []);
 
-  // Fixed handler for packagesInclude
-  const handlePackagesIncludeChange = (value: string) => {
-    setNewProduct(prev => ({
-      ...prev,
-      packagesInclude: value
-        .split("\n")
-        .map(s => s.trim())
-        .filter(Boolean)
-    }));
-  };
+  // Update packages when packagesInput changes
+  const updatePackagesFromInput = useCallback((input: string) => {
+    const packagesArray = input.split("\n").map(s => s.trim()).filter(Boolean);
+    setNewProduct(prev => ({ ...prev, packagesInclude: packagesArray }));
+  }, []);
 
-  // Fixed handler for specifications
-  const handleSpecificationsChange = (value: string) => {
+  // Update specifications when specificationsInput changes
+  const updateSpecificationsFromInput = useCallback((input: string) => {
     const obj: Record<string, string> = {};
-    value.split("\n").forEach((line) => {
+    input.split("\n").forEach((line) => {
       const idx = line.indexOf(":");
       if (idx > 0) {
         const k = line.slice(0, idx).trim();
@@ -88,15 +88,36 @@ export function ProductCreate() {
       }
     });
     setNewProduct(prev => ({ ...prev, specifications: obj }));
+  }, []);
+
+  const handleCreate = () => {
+    // Ensure all fields are synced before submission
+    updateColorsFromInput(colorsInput);
+    updatePackagesFromInput(packagesInput);
+    updateSpecificationsFromInput(specificationsInput);
+    
+    createProductMutation.mutate({
+      ...newProduct,
+      images: newProductImages,
+    });
   };
 
-  // Fixed handler for colors
-  const handleColorsChange = (value: string) => {
-    setNewProduct(prev => ({ 
-      ...prev, 
-      colors: value.split(",").map(s => s.trim()).filter(Boolean) 
-    }));
-  };
+  // Initialize inputs when data loads or changes
+  useState(() => {
+    if (newProduct.colors && newProduct.colors.length > 0 && !colorsInput) {
+      setColorsInput(newProduct.colors.join(", "));
+    }
+    if (newProduct.packagesInclude && newProduct.packagesInclude.length > 0 && !packagesInput) {
+      setPackagesInput(newProduct.packagesInclude.join("\n"));
+    }
+    if (newProduct.specifications && Object.keys(newProduct.specifications).length > 0 && !specificationsInput) {
+      setSpecificationsInput(
+        Object.entries(newProduct.specifications)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join("\n")
+      );
+    }
+  });
 
   return (
     <Card>
@@ -105,6 +126,7 @@ export function ProductCreate() {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid md:grid-cols-2 gap-4">
+          {/* Name */}
           <div>
             <Label htmlFor="product-name">Name</Label>
             <Input
@@ -114,6 +136,8 @@ export function ProductCreate() {
               placeholder="Enter product name"
             />
           </div>
+
+          {/* Price */}
           <div>
             <Label htmlFor="product-price">Price</Label>
             <Input
@@ -126,6 +150,7 @@ export function ProductCreate() {
             />
           </div>
 
+          {/* Category */}
           <div>
             <Label htmlFor="product-category">Category</Label>
             <select
@@ -147,6 +172,8 @@ export function ProductCreate() {
               ))}
             </select>
           </div>
+
+          {/* SKU */}
           <div>
             <Label htmlFor="product-sku">SKU</Label>
             <Input
@@ -157,6 +184,7 @@ export function ProductCreate() {
             />
           </div>
           
+          {/* Images */}
           <div className="md:col-span-2">
             <Label>Images</Label>
             <div className="flex items-center gap-3">
@@ -181,7 +209,7 @@ export function ProductCreate() {
             {!!newProductImages.length && (
               <div className="mt-3 flex flex-wrap gap-3">
                 {newProductImages.map((u, idx) => (
-                  <div key={u} className="relative">
+                  <div key={`${u}-${idx}`} className="relative">
                     <div className="w-20 h-20 rounded border overflow-hidden bg-muted flex items-center justify-center">
                       <img src={u} alt="preview" className="object-cover w-full h-full" />
                     </div>
@@ -223,15 +251,22 @@ export function ProductCreate() {
             )}
           </div>
 
+          {/* Colors - Using separate state for input */}
           <div>
             <Label htmlFor="product-colors">Colors (comma-separated)</Label>
             <Input
               id="product-colors"
-              value={(newProduct.colors || []).join(", ")}
-              onChange={(e) => handleColorsChange(e.target.value)}
+              value={colorsInput}
+              onChange={(e) => {
+                setColorsInput(e.target.value);
+                updateColorsFromInput(e.target.value);
+              }}
+              onBlur={() => updateColorsFromInput(colorsInput)}
               placeholder="Red, Blue, Green"
             />
           </div>
+
+          {/* Stock */}
           <div>
             <Label htmlFor="product-stock">Stock</Label>
             <Input
@@ -245,30 +280,39 @@ export function ProductCreate() {
             />
           </div>
 
+          {/* Packages Include - Using separate state for input */}
           <div className="md:col-span-2">
             <Label htmlFor="product-packages">Packages Include (one per line)</Label>
             <Textarea
               id="product-packages"
-              value={(newProduct.packagesInclude || []).join("\n")}
-              onChange={(e) => handlePackagesIncludeChange(e.target.value)}
-              placeholder="Item 1&#10;Item 2&#10;Item 3"
+              value={packagesInput}
+              onChange={(e) => {
+                setPackagesInput(e.target.value);
+                updatePackagesFromInput(e.target.value);
+              }}
+              onBlur={() => updatePackagesFromInput(packagesInput)}
+              placeholder="Item 1\nItem 2\nItem 3"
               rows={4}
             />
           </div>
 
+          {/* Specifications - Using separate state for input */}
           <div className="md:col-span-2">
             <Label htmlFor="product-specifications">Specifications (key:value, one per line)</Label>
             <Textarea
               id="product-specifications"
-              value={Object.entries(newProduct.specifications || {})
-                .map(([k, v]) => `${k}: ${v}`)
-                .join("\n")}
-              onChange={(e) => handleSpecificationsChange(e.target.value)}
-              placeholder="Weight: 2kg&#10;Dimensions: 10x20x5cm&#10;Material: Plastic"
+              value={specificationsInput}
+              onChange={(e) => {
+                setSpecificationsInput(e.target.value);
+                updateSpecificationsFromInput(e.target.value);
+              }}
+              onBlur={() => updateSpecificationsFromInput(specificationsInput)}
+              placeholder="Weight: 2kg\nDimensions: 10x20x5cm\nMaterial: Plastic"
               rows={4}
             />
           </div>
 
+          {/* Backup Product */}
           <div>
             <Label htmlFor="product-backup">Backup Product (optional)</Label>
             <select
@@ -291,6 +335,7 @@ export function ProductCreate() {
             </select>
           </div>
 
+          {/* Active Status */}
           <div>
             <Label>Active Status</Label>
             <div className="flex items-center gap-2 mt-2">
