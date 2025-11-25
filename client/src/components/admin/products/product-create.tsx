@@ -65,6 +65,39 @@ export function ProductCreate() {
     });
   };
 
+  // Fixed handler for packagesInclude
+  const handlePackagesIncludeChange = (value: string) => {
+    setNewProduct(prev => ({
+      ...prev,
+      packagesInclude: value
+        .split("\n")
+        .map(s => s.trim())
+        .filter(Boolean)
+    }));
+  };
+
+  // Fixed handler for specifications
+  const handleSpecificationsChange = (value: string) => {
+    const obj: Record<string, string> = {};
+    value.split("\n").forEach((line) => {
+      const idx = line.indexOf(":");
+      if (idx > 0) {
+        const k = line.slice(0, idx).trim();
+        const v = line.slice(idx + 1).trim();
+        if (k) obj[k] = v;
+      }
+    });
+    setNewProduct(prev => ({ ...prev, specifications: obj }));
+  };
+
+  // Fixed handler for colors
+  const handleColorsChange = (value: string) => {
+    setNewProduct(prev => ({ 
+      ...prev, 
+      colors: value.split(",").map(s => s.trim()).filter(Boolean) 
+    }));
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -73,25 +106,30 @@ export function ProductCreate() {
       <CardContent className="space-y-4">
         <div className="grid md:grid-cols-2 gap-4">
           <div>
-            <Label>Name</Label>
+            <Label htmlFor="product-name">Name</Label>
             <Input
+              id="product-name"
               value={newProduct.name || ""}
               onChange={(e) => setNewProduct((p) => ({ ...p, name: e.target.value }))}
+              placeholder="Enter product name"
             />
           </div>
           <div>
-            <Label>Price</Label>
+            <Label htmlFor="product-price">Price</Label>
             <Input
+              id="product-price"
               type="number"
               step="0.01"
               value={newProduct.price || ""}
               onChange={(e) => setNewProduct((p) => ({ ...p, price: e.target.value }))}
+              placeholder="0.00"
             />
           </div>
 
           <div>
-            <Label>Category</Label>
+            <Label htmlFor="product-category">Category</Label>
             <select
+              id="product-category"
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               value={newProduct.categoryId ?? ""}
               onChange={(e) =>
@@ -110,10 +148,12 @@ export function ProductCreate() {
             </select>
           </div>
           <div>
-            <Label>SKU</Label>
+            <Label htmlFor="product-sku">SKU</Label>
             <Input
+              id="product-sku"
               value={newProduct.sku || ""}
               onChange={(e) => setNewProduct((p) => ({ ...p, sku: e.target.value }))}
+              placeholder="Enter SKU"
             />
           </div>
           
@@ -184,68 +224,55 @@ export function ProductCreate() {
           </div>
 
           <div>
-            <Label>Colors (comma-separated)</Label>
+            <Label htmlFor="product-colors">Colors (comma-separated)</Label>
             <Input
-              value={(newProduct.colors || []).join(",")}
-              onChange={(e) =>
-                setNewProduct((p) => ({ 
-                  ...p, 
-                  colors: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) 
-                }))
-              }
+              id="product-colors"
+              value={(newProduct.colors || []).join(", ")}
+              onChange={(e) => handleColorsChange(e.target.value)}
+              placeholder="Red, Blue, Green"
             />
           </div>
           <div>
-            <Label>Stock</Label>
+            <Label htmlFor="product-stock">Stock</Label>
             <Input
+              id="product-stock"
               type="number"
               value={String(newProduct.stock ?? 0)}
               onChange={(e) =>
                 setNewProduct((p) => ({ ...p, stock: Number(e.target.value) || 0 }))
               }
+              placeholder="0"
             />
           </div>
 
           <div className="md:col-span-2">
-            <Label>Packages Include</Label>
+            <Label htmlFor="product-packages">Packages Include (one per line)</Label>
             <Textarea
+              id="product-packages"
               value={(newProduct.packagesInclude || []).join("\n")}
-              onChange={(e) =>
-                setNewProduct((p) => ({
-                  ...p,
-                  packagesInclude: e.target.value
-                    .split("\n")
-                    .map((s) => s.trim())
-                    .filter(Boolean),
-                }))
-              }
+              onChange={(e) => handlePackagesIncludeChange(e.target.value)}
+              placeholder="Item 1&#10;Item 2&#10;Item 3"
+              rows={4}
             />
           </div>
 
           <div className="md:col-span-2">
-            <Label>Specifications</Label>
+            <Label htmlFor="product-specifications">Specifications (key:value, one per line)</Label>
             <Textarea
+              id="product-specifications"
               value={Object.entries(newProduct.specifications || {})
-                .map(([k, v]) => `${k}:${v}`)
+                .map(([k, v]) => `${k}: ${v}`)
                 .join("\n")}
-              onChange={(e) => {
-                const obj: Record<string, string> = {};
-                e.target.value.split("\n").forEach((line) => {
-                  const idx = line.indexOf(":");
-                  if (idx > 0) {
-                    const k = line.slice(0, idx).trim();
-                    const v = line.slice(idx + 1).trim();
-                    if (k) obj[k] = v;
-                  }
-                });
-                setNewProduct((p) => ({ ...p, specifications: obj }));
-              }}
+              onChange={(e) => handleSpecificationsChange(e.target.value)}
+              placeholder="Weight: 2kg&#10;Dimensions: 10x20x5cm&#10;Material: Plastic"
+              rows={4}
             />
           </div>
 
           <div>
-            <Label>Backup Product (optional)</Label>
+            <Label htmlFor="product-backup">Backup Product (optional)</Label>
             <select
+              id="product-backup"
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               value={newProduct.backupProductId ?? ""}
               onChange={(e) =>
