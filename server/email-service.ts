@@ -17,7 +17,7 @@ export class EmailService {
     this.transporter = nodemailer.createTransport(config);
   }
 
-  async sendOTP(to: string, code: string, companyName: string = "TechCorp"): Promise<boolean> {
+  async sendOTP(to: string, code: string, companyName: string = "Carelon"): Promise<boolean> {
     try {
       const html = `
         <!DOCTYPE html>
