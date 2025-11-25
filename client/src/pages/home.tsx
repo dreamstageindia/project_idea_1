@@ -164,7 +164,7 @@ export default function Home() {
                   className={`
                     w-48 h-48 rounded-2xl shadow-lg border-2 border-white bg-white/90 backdrop-blur-sm
                     hover:shadow-2xl hover:scale-105 transition-all duration-300
-                    flex flex-col items-center justify-center p-6
+                    flex flex-col items-center justify-center p-4
                     ${hoveredOption === option.id ? 'ring-4 ring-blue-500/20 bg-white' : ''}
                   `}
                   onClick={() => setLocation(option.path)}
@@ -174,21 +174,21 @@ export default function Home() {
                       : 'white'
                   }}
                 >
-                  <div className="text-center space-y-3">
-                    <h3 className="text-lg font-bold text-gray-900 leading-tight">
+                  <div className="text-center space-y-2 w-full">
+                    <h3 className="text-base font-bold text-gray-900 leading-tight line-clamp-2 break-words">
                       {option.title}
                     </h3>
-                    <p className="text-sm text-gray-600 leading-relaxed">
+                    <p className="text-xs text-gray-600 leading-relaxed line-clamp-3 break-words">
                       {option.description}
                     </p>
                     <div 
-                      className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mt-2 transition-all duration-300"
+                      className="w-10 h-10 rounded-full flex items-center justify-center mx-auto mt-1 transition-all duration-300"
                       style={{
                         backgroundColor: hoveredOption === option.id ? primaryColor : '#f3f4f6'
                       }}
                     >
                       <ArrowRight 
-                        className="h-5 w-5 transition-all duration-300"
+                        className="h-4 w-4 transition-all duration-300"
                         style={{
                           color: hoveredOption === option.id ? 'white' : primaryColor,
                           transform: hoveredOption === option.id ? 'translateX(2px)' : 'none'
