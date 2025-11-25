@@ -1,7 +1,7 @@
 // src/components/layout/footer.tsx
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Building, Mail } from "lucide-react";
+import { Building, Mail, Phone, MapPin } from "lucide-react";
 
 type Branding = {
   id: string;
@@ -19,52 +19,95 @@ export function Footer() {
     queryKey: ["/api/admin/branding"],
   });
 
-  const companyName = branding?.companyName || "TechCorp";
+  const companyName = branding?.companyName || "Carelon";
   const primary = branding?.primaryColor || "#1e40af";
-  const bannerUrl = branding?.bannerUrl || null;
   const logoUrl = branding?.logoUrl || null;
 
-  const footerBg = useMemo<React.CSSProperties>(() => {
-    if (bannerUrl) {
-      return {
-        backgroundImage: `linear-gradient( to top, rgba(0,0,0,0.35), rgba(0,0,0,0.15) ), url(${bannerUrl})`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-      };
-    }
-    return {};
-  }, [bannerUrl]);
-
   return (
-    <footer className="bg-card border-t border-border mt-16 text-white" style={footerBg}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 bg-black/60">
-        <div className="grid md:grid-cols-2 gap-8">
-          <div>
-            <div className="flex items-center space-x-3 mb-4">
+    <footer className="bg-white border-t border-gray-200 mt-16 text-gray-900">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+          {/* Company Info */}
+          <div className="md:col-span-2">
+            <div className="flex items-center space-x-3 mb-6">
               {logoUrl ? (
-                // eslint-disable-next-line jsx-a11y/img-redundant-alt
-                <img src={logoUrl} alt="Company logo" className="w-40 h-40 object-contain bg-white/40 rounded" />
+                <img 
+                  src={logoUrl} 
+                  alt={`${companyName} Logo`} 
+                  className="w-32 h-32 object-contain rounded" 
+                />
               ) : (
-                <Building className="text-white" />
+                <div className="flex items-center space-x-3">
+                  <Building className="text-gray-700 h-8 w-8" />
+                  <span className="text-xl font-bold text-gray-900">{companyName}</span>
+                </div>
               )}
             </div>
+            <p className="text-gray-600 mb-4 max-w-md">
+              Your trusted partner for corporate gifting solutions. We provide premium 
+              products and exceptional service to help you create memorable experiences.
+            </p>
             
           </div>
 
+          {/* Quick Links */}
           <div>
-            <h4 className="font-semibold mb-4">Contact</h4>
-            <div className="flex items-center text-sm text-muted-foreground">
-              <Mail className="mr-2 h-4 w-4" />
-              <a href="mailto:support@aceprintpack.com" className="hover:text-foreground">
-                support@aceprintpack.com
-              </a>
+            <h4 className="font-semibold text-gray-900 mb-4 text-lg">Quick Links</h4>
+            <ul className="space-y-3">
+              <li>
+                <a href="/dashboard" className="text-gray-600 hover:text-gray-900 transition-colors text-sm">
+                  Brand Store
+                </a>
+              </li>
+              <li>
+                <a href="/special-occasions" className="text-gray-600 hover:text-gray-900 transition-colors text-sm">
+                  Special Occasions
+                </a>
+              </li>
+              <li>
+                <a href="/bulk-buy" className="text-gray-600 hover:text-gray-900 transition-colors text-sm">
+                  Bulk Buy
+                </a>
+              </li>
+              <li>
+                <a href="/csr-blog" className="text-gray-600 hover:text-gray-900 transition-colors text-sm">
+                  CSR & Blog
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          {/* Contact Info */}
+          <div>
+            <h4 className="font-semibold text-gray-900 mb-4 text-lg">Contact Us</h4>
+            <div className="space-y-3">
+              <div className="flex items-center text-gray-600">
+                <Mail className="mr-3 h-4 w-4" />
+                <a 
+                  href="mailto:support@carelon.com" 
+                  className="text-sm hover:text-gray-900 transition-colors"
+                >
+                  support@carelon.com
+                </a>
+              </div>
+              
             </div>
+            
+            
           </div>
         </div>
 
-        <div className="border-t border-border mt-8 pt-8 text-center text-sm text-muted-foreground">
-          <p>&copy; {new Date().getFullYear()} {companyName}. All rights reserved. | Employee Product Selection Portal</p>
-          <p className="mt-2">Powered by BRACKETS</p>
+        {/* Bottom Section */}
+        <div className="border-t border-gray-200 mt-8 pt-8 text-center">
+          <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
+            <p className="text-gray-600 text-sm">
+              &copy; {new Date().getFullYear()} {companyName}. All rights reserved.
+            </p>
+            <div className="text-gray-600 text-sm">
+              <span>Employee Product Selection Portal | Powered by </span>
+              <span className="font-semibold text-gray-900">BRACKETS</span>
+            </div>
+          </div>
         </div>
       </div>
     </footer>

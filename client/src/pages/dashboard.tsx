@@ -6,11 +6,17 @@ import { Header } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
 import { ProductCard } from "@/components/product/product-card";
 import { ProductDetailModal } from "@/components/product/product-detail-modal";
-import { ConfirmationModal } from "@/components/order/confirmation-modal";
-import { OrderConfirmationModal } from "@/components/order/order-confirmation-modal";
+import { ConfirmationModal } from "@/components/admin/orders/confirmation-modal";
+import { OrderConfirmationModal } from "@/components/admin/orders/order-confirmation-modal";
 import { useAuth } from "@/hooks/use-auth";
 import { CheckCircle, X, ShoppingCart } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
+import { SiApple, SiSamsung, SiSony, SiNike, SiAdidas, SiPuma } from "react-icons/si";
+
+// Import images
+import heroImg from '@assets/generated_images/corporate_gifting_hero_image.png';
+import unboxingBg from '@assets/generated_images/white_gift_box_background.png';
 
 type Branding = {
   id: string;
@@ -39,7 +45,167 @@ type Product = {
   backupProductId?: string | null;
   isBackup?: boolean;
   originalProductId?: string | null;
+  category?: {
+    id: string;
+    name: string;
+    description?: string;
+    imageUrl?: string;
+  } | null;
 };
+
+type Category = {
+  id: string;
+  name: string;
+  description?: string;
+  imageUrl?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+  createdAt?: string;
+};
+
+// Brands Showcase Component
+function BrandsShowcase() {
+  const brands = [
+    { icon: SiApple, name: "Apple" },
+    { icon: SiSamsung, name: "Samsung" },
+    { icon: SiSony, name: "Sony" },
+    { icon: SiNike, name: "Nike" },
+    { icon: SiAdidas, name: "Adidas" },
+    { icon: SiPuma, name: "Puma" },
+  ];
+
+  return (
+    <div className="py-12 bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <h2 className="text-2xl font-semibold text-center mb-8" data-testid="text-brands-title">
+          Brands we deal in
+        </h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-8 items-center">
+          {brands.map((brand) => (
+            <div 
+              key={brand.name} 
+              className="flex items-center justify-center grayscale hover:grayscale-0 transition-all opacity-60 hover:opacity-100"
+              data-testid={`brand-${brand.name.toLowerCase()}`}
+            >
+              <brand.icon className="w-12 h-12" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Category Sidebar Component
+function CategorySidebar({ 
+  selectedCategory, 
+  onSelectCategory,
+  categories 
+}: { 
+  selectedCategory: string;
+  onSelectCategory: (categoryId: string) => void;
+  categories: Category[];
+}) {
+  return (
+    <div className="w-full lg:w-64 bg-white rounded-xl shadow-sm border border-gray-200 p-6 sticky top-24">
+      <h3 className="font-semibold text-lg mb-6 text-gray-900">Categories</h3>
+      <div className="space-y-3">
+        <button
+          onClick={() => onSelectCategory("all")}
+          className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 font-medium ${
+            selectedCategory === "all"
+              ? "bg-blue-600 text-white shadow-md"
+              : "text-gray-700 hover:bg-gray-50 hover:text-blue-600 border border-gray-200"
+          }`}
+        >
+          All Products
+        </button>
+        {categories.map((category) => (
+          <button
+            key={category.id}
+            onClick={() => onSelectCategory(category.id)}
+            className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 font-medium ${
+              selectedCategory === category.id
+                ? "bg-blue-600 text-white shadow-md"
+                : "text-gray-700 hover:bg-gray-50 hover:text-blue-600 border border-gray-200"
+            }`}
+          >
+            {category.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Unboxing Happiness Component
+function UnboxingHappiness() {
+  return (
+    <div 
+      className="w-full rounded-2xl shadow-sm border border-gray-200 overflow-hidden relative min-h-64 flex items-center justify-center"
+      style={{
+        backgroundImage: `url(${unboxingBg})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat'
+      }}
+    >
+      <div className="absolute inset-0 bg-black/10"></div>
+      <div className="relative z-10 text-center p-8">
+        <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4 drop-shadow-lg">
+          Unboxing Happiness !!
+        </h2>
+        <p className="text-lg text-gray-700 max-w-2xl mx-auto drop-shadow-md">
+          Discover the perfect gifts that bring joy and create memorable moments. 
+          Select from our exclusive collection curated just for you.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// Hero Component
+function Hero({ backgroundImage, companyName, employeeName }: { 
+  backgroundImage?: string; 
+  companyName: string;
+  employeeName: string;
+}) {
+  const heroStyle = useMemo<React.CSSProperties>(() => {
+    if (backgroundImage) {
+      return {
+        backgroundImage: `linear-gradient(135deg, rgba(0,0,0,0.4) 0%, rgba(0,0,0,0.3) 100%), url(${backgroundImage})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+      };
+    }
+    return {
+      background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+    };
+  }, [backgroundImage]);
+
+  return (
+    <div 
+      className="relative h-96 rounded-2xl mx-4 mt-4 mb-8 overflow-hidden shadow-xl"
+      style={heroStyle}
+    >
+      <div className="absolute inset-0 bg-black/20"></div>
+      <div className="relative z-10 h-full flex items-center justify-center text-center text-white">
+        <div className="max-w-4xl px-6">
+          <h1 className="text-5xl font-bold mb-4 drop-shadow-lg">
+            Welcome to {companyName}
+          </h1>
+          <p className="text-2xl font-semibold mb-6 drop-shadow-md">
+            CORPORATE BRAND STORE
+          </p>
+          <p className="text-xl opacity-90 drop-shadow-md">
+            Dear {employeeName}, choose from our exclusive collection of premium gifts
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function SimplePrompt({
   open,
@@ -125,9 +291,14 @@ export default function Dashboard() {
   const [showPleaseSelectPrompt, setShowPleaseSelectPrompt] = useState(false);
   const [showRecordedPrompt, setShowRecordedPrompt] = useState(false);
   const [quantity, setQuantity] = useState(1);
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
 
   const { data: branding } = useQuery<Branding>({
     queryKey: ["/api/admin/branding"],
+  });
+
+  const { data: categories = [] } = useQuery<Category[]>({
+    queryKey: ["/api/categories"],
   });
 
   const companyName = branding?.companyName || "TechCorp";
@@ -137,19 +308,6 @@ export default function Dashboard() {
   const bannerText = branding?.bannerText || "";
   const inrPerPoint = parseFloat(branding?.inrPerPoint || "1");
   const maxSelections = branding?.maxSelectionsPerUser ?? 1;
-
-  const heroStyle = useMemo<React.CSSProperties>(() => {
-    if (bannerUrl) {
-      return {
-        backgroundImage: `linear-gradient( to right, rgba(0,0,0,0.45), rgba(0,0,0,0.25) ), url(${bannerUrl})`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-      };
-    }
-    return {
-      backgroundImage: `linear-gradient(90deg, ${primary}, ${accent})`,
-    };
-  }, [bannerUrl, primary, accent]);
 
   const { data: products = [] } = useQuery<Product[]>({
     queryKey: ["/api/products"],
@@ -167,17 +325,25 @@ export default function Dashboard() {
     const originalsToHide = new Set(
       list.filter((p) => p.isBackup && p.originalProductId).map((p) => p.originalProductId as string)
     );
-    return list
+    
+    const filteredList = list
       .filter((p) => {
         if (!p.stock || p.stock <= 0) return false;
         if (!p.isBackup && originalsToHide.has(p.id)) return false;
+        
+        // Filter by category
+        if (selectedCategory !== "all") {
+          return p.category?.id === selectedCategory;
+        }
         return true;
       })
       .map((p) => ({
         ...p,
         pointsRequired: Math.ceil(parseFloat(p.price) / inrPerPoint),
       }));
-  }, [products, inrPerPoint]);
+
+    return filteredList;
+  }, [products, inrPerPoint, selectedCategory]);
 
   const addToCartMutation = useMutation({
     mutationFn: async (data: { productId: string; selectedColor: string | null; quantity: number }) => {
@@ -291,13 +457,20 @@ export default function Dashboard() {
     setShowPleaseSelectPrompt(true);
   }, []);
 
+  const handleCategoryChange = useCallback((categoryId: string) => {
+    setSelectedCategory(categoryId);
+  }, []);
+
   const maxDisplay = maxSelections === -1 ? "∞" : maxSelections;
+
+  const showProductsGrid = selectedCategory !== "all" && displayProducts.length > 0;
 
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {reachedLimit ? (
+      
+      {reachedLimit ? (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="text-center">
             <div className="w-20 h-20 bg-green-100 rounded-full mx-auto mb-4 flex items-center justify-center">
               <CheckCircle className="text-green-600 text-3xl" />
@@ -344,36 +517,67 @@ export default function Dashboard() {
               ))}
             </div>
           </div>
-        ) : (
-          <>
-            <div className="rounded-xl p-8 mb-8 text-white" style={heroStyle}>
-              <div className="max-w-full bg-black/60 p-3 rounded">
-                <h2 className="text-3xl font-bold mb-2">{companyName}</h2>
-                <h3 className="text-xl font-semibold mb-4">
-                  Dear {employee?.firstName ? employee.firstName : "User"}
-                </h3>
-                <p className="text-lg opacity-90 mb-6">
-                  Your Text Goes Here
-                </p>
-                {bannerUrl && bannerText ? <p className="text-sm opacity-90 mb-6">{bannerText}</p> : null}
-              </div>
-            </div>
+        </div>
+      ) : (
+        <>
+          <Hero 
+            backgroundImage={heroImg}
+            companyName={companyName}
+            employeeName={employee?.firstName || "User"}
+          />
+          
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+            <div className="flex flex-col lg:flex-row gap-8">
+              {/* Categories Sidebar */}
+              <CategorySidebar 
+                selectedCategory={selectedCategory}
+                onSelectCategory={handleCategoryChange}
+                categories={categories}
+              />
+              
+              {/* Main Content Area */}
+              <main className="flex-1">
+                {/* Show Unboxing Happiness when no category is selected */}
+                {!showProductsGrid && (
+                  <UnboxingHappiness />
+                )}
 
-            
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {displayProducts.map((product) => (
-                <ProductCard
-                  key={product.id}
-                  product={product}
-                  onView={handleViewProduct}
-                  onAddToCart={handleAddToCart}
-                />
-              ))}
+                {/* Show Products Grid when a category is selected */}
+                {showProductsGrid && (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6 mb-8">
+                      {displayProducts.map((product) => (
+                        <ProductCard
+                          key={product.id}
+                          product={product}
+                          onView={handleViewProduct}
+                          onAddToCart={handleAddToCart}
+                        />
+                      ))}
+                    </div>
+                    
+                    {displayProducts.length > 0 && (
+                      <div className="flex justify-center">
+                        <Button 
+                          size="lg" 
+                          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-8 py-3 rounded-xl"
+                          data-testid="button-view-more"
+                        >
+                          VIEW MORE
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </main>
             </div>
-          </>
-        )}
-      </main>
+          </div>
+
+          {/* Brands Showcase Section */}
+          <BrandsShowcase />
+        </>
+      )}
+      
       <Footer />
 
       {showProductDetail && selectedProduct && (

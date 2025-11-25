@@ -12,6 +12,9 @@ import Cart from "@/pages/cart";
 import MyOrders from "@/pages/my-orders";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { SessionTimer } from "@/components/session/session-timer";
+import Landing from "./pages/landing";
+import Home from "./pages/home";
+import OccasionalCampaigns from "./pages/occasional-campaigns";
 
 function Routes() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -45,8 +48,20 @@ function Routes() {
         {isAuthenticated ? <MyOrders /> : <Login />}
       </Route>
 
-      <Route path="/">
+      <Route path="/login">
         {isAuthenticated ? <Dashboard /> : <Login />}
+      </Route>
+
+      <Route path="/home">
+        {isAuthenticated ? <Home /> : <Login />}
+      </Route>
+
+      <Route path="/special-occasions">
+        {isAuthenticated ? <OccasionalCampaigns /> : <Login />}
+      </Route>
+
+      <Route path="/">
+        <Landing />
       </Route>
 
       <Route>

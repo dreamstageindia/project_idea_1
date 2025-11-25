@@ -1,4 +1,3 @@
-// shared/schema.ts
 import { sql } from "drizzle-orm";
 import {
   pgTable,
@@ -14,19 +13,29 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 /* =========================================================
+   CATEGORIES
+   =======================================================*/
+export const categories = pgTable("categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  imageUrl: text("image_url"),
+  isActive: boolean("is_active").default(true),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+/* =========================================================
    EMPLOYEES
    =======================================================*/
 export const employees = pgTable("employees", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  // Optional/legacy identifier; keep if old UI still shows it.
   employeeId: text("employee_id").unique(),
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
-  // Primary login identifier (E.164, e.g. "+919876543210")
-  phoneNumber: text("phone_number").notNull().unique(),
-  // Points balance for the user
+  email: text("email").notNull().unique(),
+  phoneNumber: text("phone_number"),
   points: integer("points").notNull().default(0),
-  // Legacy lock state for admin UI
   loginAttempts: integer("login_attempts").default(0),
   isLocked: boolean("is_locked").default(false),
   createdAt: timestamp("created_at").defaultNow(),
@@ -47,6 +56,7 @@ export const products = pgTable("products", {
   sku: text("sku").notNull().unique(),
   isActive: boolean("is_active").default(true),
   backupProductId: varchar("backup_product_id"),
+  categoryId: varchar("category_id").references(() => categories.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -90,8 +100,6 @@ export const sessions = pgTable("sessions", {
 
 /* =========================================================
    BRANDING
-   ---------------------------------------------------------
-   inrPerPoint: how many INR is 1 point worth (default 1.00).
    =======================================================*/
 export const branding = pgTable("branding", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -107,25 +115,33 @@ export const branding = pgTable("branding", {
 });
 
 /* =========================================================
-   OTP ISSUES (MessageCentral flow)
+   OTP ISSUES (Email flow)
    =======================================================*/
 export const otps = pgTable("otps", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  phoneNumber: text("phone_number").notNull(),
-  code: text("code").notNull(), // "__MC__" placeholder when MC manages OTP
+  email: text("email").notNull(),
+  code: text("code").notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   usedAt: timestamp("used_at"),
-  metadata: json("metadata").$type<{ verificationId?: string | null } | null>().default(null),
+  metadata: json("metadata").$type<{ localCode?: string | null } | null>().default(null),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
 /* =========================================================
    ZOD INSERT SCHEMAS
    =======================================================*/
+export const insertCategorySchema = createInsertSchema(categories).pick({
+  name: true,
+  description: true,
+  imageUrl: true,
+  isActive: true,
+  sortOrder: true,
+});
+
 export const insertEmployeeSchema = createInsertSchema(employees).pick({
   firstName: true,
   lastName: true,
-  phoneNumber: true,
+  email: true,
   points: true,
 });
 
@@ -139,6 +155,8 @@ export const insertProductSchema = createInsertSchema(products).pick({
   specifications: true,
   sku: true,
   backupProductId: true,
+  categoryId: true,
+  isActive: true,
 });
 
 export const insertOrderSchema = createInsertSchema(orders).pick({
@@ -157,41 +175,27 @@ export const insertCartItemSchema = createInsertSchema(cartItems).pick({
 });
 
 /* =========================================================
-   LEGACY (kept to avoid breaking imports elsewhere)
-   =======================================================*/
-export const loginSchema = z.object({
-  employeeId: z.string().optional(),
-});
-export const verificationSchema = z.object({
-  employeeId: z.string().optional(),
-  yearOfBirth: z.number().optional(),
-});
-
-/* =========================================================
-   NEW OTP FLOW SCHEMAS
-   - phoneLoginSchema: for sending OTP
-   - otpVerifySchema:  for verifying OTP
-   Aliases exported to match older imports:
-   - sendOtpSchema   -> phoneLoginSchema
-   - verifyOtpSchema -> otpVerifySchema
-   =======================================================*/
-export const phoneLoginSchema = z.object({
-  phoneNumber: z.string().min(7, "Phone number is required"),
+   EMAIL OTP FLOW SCHEMAS
+   =========================================================*/
+export const emailLoginSchema = z.object({
+  email: z.string().email("Valid email is required"),
 });
 export const otpVerifySchema = z.object({
-  phoneNumber: z.string().min(7, "Phone number is required"),
+  email: z.string().email("Valid email is required"),
   code: z.string().min(4, "OTP is required"),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
 });
 
-// 🔁 Aliases for backward compatibility with `auth-otp.ts` imports
-export const sendOtpSchema = phoneLoginSchema;
+export const sendOtpSchema = emailLoginSchema;
 export const verifyOtpSchema = otpVerifySchema;
 
 /* =========================================================
    TYPES
    =======================================================*/
+export type InsertCategory = z.infer<typeof insertCategorySchema>;
+export type Category = typeof categories.$inferSelect;
+
 export type InsertEmployee = z.infer<typeof insertEmployeeSchema>;
 export type Employee = typeof employees.$inferSelect;
 

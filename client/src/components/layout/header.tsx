@@ -44,19 +44,7 @@ export function Header() {
 
   const companyName = branding?.companyName || "TechCorp";
   const primary = branding?.primaryColor || "#1e40af";
-  const bannerUrl = branding?.bannerUrl || null;
   const logoUrl = branding?.logoUrl || null;
-
-  const headerBg = useMemo<React.CSSProperties>(() => {
-    if (bannerUrl) {
-      return {
-        backgroundImage: `linear-gradient( to bottom, rgba(0,0,0,0.45), rgba(0,0,0,0.25) ), url(${bannerUrl})`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-      };
-    }
-    return {};
-  }, [bannerUrl]);
 
   const handleLogout = () => {
     logout();
@@ -64,55 +52,93 @@ export function Header() {
   };
 
   return (
-    <header className="bg-card border-b border-border sticky top-0 z-40 text-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 bg-black/40">
-        <div className="flex items-center justify-between h-16 ">
+    <header className="bg-white border-b border-gray-200 sticky top-0 z-40 text-gray-900 shadow-sm">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-16">
           {/* Logo and Navigation */}
-          <div className="flex items-center space-x-8 b">
+          <div className="flex items-center space-x-8">
             <div className="flex items-center space-x-3" data-testid="logo">
-              
-                {logoUrl ? (
-                  // eslint-disable-next-line jsx-a11y/img-redundant-alt
-                  <img src={logoUrl} alt="Company logo" className="w-40 h-auto object-contain bg-white/40 rounded" />
-                ) : (
-                  <Building className="text-white" />
-                )}
-            
+              {logoUrl ? (
+                <img 
+                  src={logoUrl} 
+                  alt="Company logo" 
+                  className="w-40 h-auto object-contain rounded" 
+                />
+              ) : (
+                <Building className="text-gray-900 h-8 w-8" />
+              )}
             </div>
           </div>
 
           {/* User Menu */}
           <div className="flex items-center space-x-4">
             <div className="relative">
-              <Button variant="ghost" onClick={() => setLocation("/cart")}>
+              <Button 
+                variant="ghost" 
+                onClick={() => setLocation("/cart")}
+                className="text-gray-700 hover:text-gray-900 hover:bg-gray-100"
+              >
                 <ShoppingCart className="h-5 w-5" />
                 {cartItemCount > 0 && (
                   <Badge
                     className="absolute -top-2 -right-2 bg-red-500 text-white"
-                    style={{ minWidth: "1.5rem", height: "1.5rem", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}
+                    style={{ 
+                      minWidth: "1.5rem", 
+                      height: "1.5rem", 
+                      borderRadius: "50%", 
+                      display: "flex", 
+                      alignItems: "center", 
+                      justifyContent: "center",
+                      fontSize: "0.75rem"
+                    }}
                   >
                     {cartItemCount}
                   </Badge>
                 )}
               </Button>
             </div>
-            <Button variant="ghost" onClick={() => setLocation("/my-orders")}>
+            
+            <Button 
+              variant="ghost" 
+              onClick={() => setLocation("/my-orders")}
+              className="text-gray-700 hover:text-gray-900 hover:bg-gray-100"
+            >
               <History className="h-5 w-5" />
             </Button>
+            
             <div className="hidden sm:block text-right">
-              <p className="font-medium text-white" data-testid="text-user-name">
+              <p className="font-medium text-gray-900" data-testid="text-user-name">
                 {employee?.firstName} {employee?.lastName}
               </p>
-              <p className="text-sm text-muted-foreground" data-testid="text-employee-id">
+              <p className="text-sm text-gray-600" data-testid="text-employee-id">
                 {employee?.employeeId}
               </p>
-              <p className="text-sm">
+              <p className="text-sm text-gray-600">
                 Points: {employee?.points ?? 0}
               </p>
             </div>
-            <Button variant="destructive" size="sm" onClick={handleLogout} data-testid="button-logout">
+            
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleLogout} 
+              data-testid="button-logout"
+              className="border-gray-300 text-gray-700 hover:bg-gray-50 hover:text-gray-900"
+            >
               <LogOut className="mr-2 h-4 w-4" />
               Logout
+            </Button>
+          </div>
+
+          {/* Mobile Menu Button */}
+          <div className="md:hidden">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="text-gray-700 hover:text-gray-900 hover:bg-gray-100"
+            >
+              {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </Button>
           </div>
         </div>
@@ -120,28 +146,48 @@ export function Header() {
 
       {/* Mobile Menu */}
       {isMobileMenuOpen && (
-        <div className="md:hidden border-t border-border bg-card/90 backdrop-blur">
+        <div className="md:hidden border-t border-gray-200 bg-white">
           <nav className="p-4 space-y-4">
-            <a
-              href="#"
-              className="block px-4 py-3 text-primary font-medium bg-primary/10 rounded-lg"
-              data-testid="mobile-nav-products"
-            >
-              Products
-            </a>
-            <a
-              href="#"
-              className="block px-4 py-3 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg"
-              data-testid="mobile-nav-profile"
-            >
-              Profile
-            </a>
-            <div className="sm:hidden px-4 py-3 border-t border-border">
-              <p className="font-medium">
+            <div className="px-4 py-3 border-b border-gray-200">
+              <p className="font-medium text-gray-900">
                 {employee?.firstName} {employee?.lastName}
               </p>
-              <p className="text-sm text-muted-foreground">{employee?.employeeId}</p>
+              <p className="text-sm text-gray-600">{employee?.employeeId}</p>
+              <p className="text-sm text-gray-600">Points: {employee?.points ?? 0}</p>
             </div>
+            
+            <Button
+              variant="ghost"
+              className="w-full justify-start text-gray-700 hover:text-gray-900 hover:bg-gray-100"
+              onClick={() => {
+                setLocation("/cart");
+                setIsMobileMenuOpen(false);
+              }}
+            >
+              <ShoppingCart className="mr-2 h-4 w-4" />
+              Cart {cartItemCount > 0 && `(${cartItemCount})`}
+            </Button>
+            
+            <Button
+              variant="ghost"
+              className="w-full justify-start text-gray-700 hover:text-gray-900 hover:bg-gray-100"
+              onClick={() => {
+                setLocation("/my-orders");
+                setIsMobileMenuOpen(false);
+              }}
+            >
+              <History className="mr-2 h-4 w-4" />
+              My Orders
+            </Button>
+            
+            <Button
+              variant="outline"
+              className="w-full justify-start text-gray-700 border-gray-300 hover:bg-gray-50"
+              onClick={handleLogout}
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              Logout
+            </Button>
           </nav>
         </div>
       )}

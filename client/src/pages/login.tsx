@@ -1,4 +1,3 @@
-// src/pages/Login.tsx
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,10 +7,12 @@ import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { OTPVerificationModal } from "@/components/auth/otp-verification-modal";
-import { Building, ShieldCheck } from "lucide-react";
+import { Mail, ArrowRight } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import whiteGiftImg from '@assets/image_1764034739122.png';
+import carelonLogoImg from '@assets/image_1764034739122.png';
 
 type Branding = {
   id: string;
@@ -24,31 +25,12 @@ type Branding = {
   updatedAt: string;
 };
 
-function toE164With91Default(raw: string): string {
-  const digits = raw.replace(/\D+/g, "");
-  if (!digits) return "";
-  if (digits.startsWith("91") && digits.length >= 12) return `+${digits}`;
-  if (digits.length === 10) return `+91${digits}`;
-  if (digits.length > 10) return `+${digits}`;
-  return `+91${digits}`;
-}
-
-function enforcePlus91PrefixLive(value: string): string {
-  const digits = value.replace(/\D+/g, "");
-  if (!digits) return "+91 ";
-  if (digits.startsWith("91")) return `+${digits}`;
-  if (digits.length === 10) return `+91${digits}`;
-  if (digits.length > 10) return `+${digits}`;
-  return `+91${digits}`;
-}
-
 export default function Login() {
-  const [phoneNumber, setPhoneNumber] = useState("");
+  const [email, setEmail] = useState("");
   const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [confirmPhone, setConfirmPhone] = useState("");
+  const [confirmEmail, setConfirmEmail] = useState("");
   const [fetchedName, setFetchedName] = useState<{ firstName: string; lastName: string } | null>(null);
   const [isFetchingName, setIsFetchingName] = useState(false);
-
   const [showVerificationModal, setShowVerificationModal] = useState(false);
   const [prefill, setPrefill] = useState<{ firstName: string; lastName: string } | null>(null);
 
@@ -56,14 +38,11 @@ export default function Login() {
   const { login } = useAuth();
   const [, setLocation] = useLocation();
 
-  // Branding
   const { data: branding } = useQuery<Branding>({ queryKey: ["/api/admin/branding"] });
   const primary = branding?.primaryColor || "#1e40af";
   const accent = branding?.accentColor || "#f97316";
-  const company = branding?.companyName || "TechCorp";
+  const company = branding?.companyName || "Carelon";
   const logoUrl = branding?.logoUrl || null;
-  const bannerUrl = branding?.bannerUrl || null;
-  const bannerText = branding?.bannerText || "";
 
   useEffect(() => {
     const root = document.documentElement;
@@ -71,20 +50,8 @@ export default function Login() {
     root.style.setProperty("--brand-accent", accent);
   }, [primary, accent]);
 
-  const pageBgStyle = useMemo<React.CSSProperties>(() => {
-    if (bannerUrl) {
-      return {
-        backgroundImage: `url(${bannerUrl})`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-      };
-    }
-    return { backgroundImage: `linear-gradient(135deg, ${primary} 0%, ${accent} 100%)` };
-  }, [bannerUrl, primary, accent]);
-
-  // Send OTP (after confirm)
   const sendOtpMutation = useMutation({
-    mutationFn: async (data: { phoneNumber: string }) => {
+    mutationFn: async (data: { email: string }) => {
       const res = await apiRequest("POST", "/api/auth/send-otp", data);
       if (!res.ok) throw new Error(await res.text());
       return res.json();
@@ -93,7 +60,7 @@ export default function Login() {
       setPrefill(fetchedName ?? { firstName: "", lastName: "" });
       setShowConfirmModal(false);
       setShowVerificationModal(true);
-      toast({ title: "OTP sent", description: "Please check your phone" });
+      toast({ title: "OTP sent", description: "Please check your email" });
     },
     onError: (err: any) => {
       let message = "Failed to send OTP";
@@ -105,9 +72,8 @@ export default function Login() {
     },
   });
 
-  // Verify OTP
   const verifyOtpMutation = useMutation({
-    mutationFn: async (data: { phoneNumber: string; code: string; firstName: string; lastName: string }) => {
+    mutationFn: async (data: { email: string; code: string; firstName: string; lastName: string }) => {
       const res = await apiRequest("POST", "/api/auth/verify-otp", data);
       if (!res.ok) throw new Error(await res.text());
       return res.json();
@@ -116,7 +82,7 @@ export default function Login() {
       login(data.token, data.employee, data.expiresAt);
       toast({ title: "Login Successful", description: `Welcome, ${data.employee.firstName}!` });
       setShowVerificationModal(false);
-      setLocation("/dashboard");
+      setLocation("/home");
     },
     onError: (err: any) => {
       let message = "Verification failed";
@@ -147,22 +113,22 @@ export default function Login() {
     },
   });
 
-  // Main submit → open confirm modal & fetch name from DB
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const e164 = toE164With91Default(phoneNumber);
-    if (!e164) {
-      toast({ title: "Error", description: "Please enter your Phone Number", variant: "destructive" });
+    const normalizedEmail = email.trim().toLowerCase();
+    
+    if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
+      toast({ title: "Error", description: "Please enter a valid email address", variant: "destructive" });
       return;
     }
-    setConfirmPhone(e164);
+    
+    setConfirmEmail(normalizedEmail);
     setFetchedName(null);
     setShowConfirmModal(true);
 
-    // fetch name from DB (requires /api/auth/lookup-by-phone)
     setIsFetchingName(true);
     try {
-      const res = await fetch(`/api/auth/lookup-by-phone?phoneNumber=${encodeURIComponent(e164)}`, {
+      const res = await fetch(`/api/auth/lookup-by-email?email=${encodeURIComponent(normalizedEmail)}`, {
         method: "GET",
         headers: { "accept": "application/json" },
       });
@@ -174,7 +140,7 @@ export default function Login() {
         });
       } else if (res.status === 404) {
         setFetchedName(null);
-        toast({ title: "Not found", description: "No employee found for this phone number.", variant: "destructive" });
+        toast({ title: "Not found", description: "No employee found for this email address.", variant: "destructive" });
       } else {
         const msg = await res.text();
         toast({ title: "Lookup failed", description: msg || "Unable to fetch user name.", variant: "destructive" });
@@ -194,23 +160,18 @@ export default function Login() {
         <DialogContent className="max-w-sm">
           <h3 className="text-lg font-semibold mb-2">Confirm your details</h3>
           <p className="text-sm text-muted-foreground mb-4">
-            We found the following details for your number. If they’re correct, we’ll send an OTP.
+            We found the following details for your email. If they're correct, we'll send an OTP.
           </p>
 
           <div className="space-y-3">
             <div>
-              <Label htmlFor="confirm-phone">Phone Number</Label>
+              <Label htmlFor="confirm-email">Email Address</Label>
               <Input
-                id="confirm-phone"
-                type="tel"
-                value={confirmPhone}
-                onChange={(e) => {
-                  const v = enforcePlus91PrefixLive(e.target.value);
-                  setConfirmPhone(v);
-                }}
-                readOnly
+                id="confirm-email"
+                type="email"
+                value={confirmEmail}
+                onChange={(e) => setConfirmEmail(e.target.value.toLowerCase())}
               />
-              <p className="text-xs text-muted-foreground mt-1">“+91” is applied automatically if missing.</p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -231,16 +192,13 @@ export default function Login() {
             </Button>
             <Button
               onClick={() => {
-                const finalPhone = toE164With91Default(confirmPhone);
-                if (!finalPhone) {
-                  toast({ title: "Invalid phone", description: "Please check the number.", variant: "destructive" });
+                const finalEmail = confirmEmail.trim().toLowerCase();
+                if (!finalEmail || !isValidEmail(finalEmail)) {
+                  toast({ title: "Invalid email", description: "Please check the email address.", variant: "destructive" });
                   return;
                 }
-                // keep main input in sync
-                setPhoneNumber(finalPhone);
-
-                // proceed to send OTP
-                sendOtpMutation.mutate({ phoneNumber: finalPhone });
+                setEmail(finalEmail);
+                sendOtpMutation.mutate({ email: finalEmail });
               }}
               disabled={disabled || sendOtpMutation.isPending}
               style={{ backgroundColor: primary, borderColor: primary }}
@@ -258,100 +216,98 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen relative" style={pageBgStyle}>
-      {bannerUrl && <div className="absolute inset-0 bg-black/40" aria-hidden />}
-
-      {(bannerText && bannerUrl) && (
-        <div className="absolute top-0 left-0 right-0 z-10">
-          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4" />
-        </div>
-      )}
-
-      <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
-        <div className="w-full max-w-md">
-          <div className="text-center mb-8">
-            <div className="mx-auto mb-4 flex items-center justify-center">
-              {logoUrl ? (
-                <img src={logoUrl} alt="Company Logo" className="object-contain w-24 h-24 rounded-lg bg-white/90 p-2 shadow" />
-              ) : (
-                <div className="w-20 h-20 rounded-xl mx-auto flex items-center justify-center" style={{ backgroundColor: primary }}>
-                  <Building className="text-white text-2xl" />
-                </div>
-              )}
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-purple-100 relative overflow-hidden">
+      <div 
+        className="absolute inset-0 opacity-10"
+        style={{
+          backgroundImage: `radial-gradient(circle at 20% 50%, rgba(147, 51, 234, 0.1) 0%, transparent 50%),
+                           radial-gradient(circle at 80% 80%, rgba(147, 51, 234, 0.1) 0%, transparent 50%),
+                           radial-gradient(circle at 40% 20%, rgba(59, 130, 246, 0.1) 0%, transparent 50%)`,
+        }}
+      />
+      
+      
+      
+      <div className="absolute top-8 left-8">
+        <img 
+          src={carelonLogoImg} 
+          alt="Carelon Logo" 
+          className="h-12"
+          data-testid="img-carelon-logo"
+        />
+      </div>
+      
+      <div className="relative min-h-screen flex items-center justify-center p-4">
+        <div className="w-full max-w-2xl text-center">
+          <h1 className="text-5xl font-bold text-primary mb-4" data-testid="text-login-title">
+            Welcome
+          </h1>
+          <p className="text-xl text-foreground mb-12" data-testid="text-login-subtitle">
+            Login your account
+          </p>
+          
+          <form onSubmit={handleSubmit} className="space-y-8">
+            <div className="text-left">
+              <Label htmlFor="email" className="text-lg mb-3 block">
+                email address*
+              </Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder=""
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="h-14 bg-white text-lg rounded-lg"
+                data-testid="input-email"
+              />
             </div>
-
-            <h1 className="text-3xl font-bold drop-shadow-sm" style={{ color: bannerUrl ? "#ffffff" : primary }}>
-              {company} Portal
-            </h1>
-            {!bannerUrl && <p className="text-muted-foreground mt-2">Employee Product Selection System</p>}
-          </div>
-
-          <Card className="shadow-xl border border-border/50 backdrop-blur bg-white/95">
-            <CardContent className="pt-6">
-              <h2 className="text-2xl font-semibold text-center mb-6">Employee Login</h2>
-
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <Label htmlFor="phone" className="block text-sm font-medium mb-2">Phone Number</Label>
-                  <Input
-                    id="phone"
-                    type="tel"
-                    value={phoneNumber}
-                    onChange={(e) => setPhoneNumber(e.target.value)}
-                    placeholder="e.g. +91 98765 43210"
-                    className="form-input"
-                    data-testid="input-phone"
-                    required
-                  />
-                </div>
-
-                <Button
-                  type="submit"
-                  className="w-full"
-                  style={{ backgroundColor: primary, borderColor: primary }}
-                  disabled={sendOtpMutation.isPending}
-                  data-testid="button-continue"
-                >
-                  Continue
-                </Button>
-              </form>
-
-              <div className="mt-4 text-center">
-                <p className="text-sm text-muted-foreground flex items-center justify-center">
-                  <ShieldCheck className="mr-1 h-4 w-4" />
-                  Secure employee authentication
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* 1) Confirm (shows fetched name) */}
-          <ConfirmUserModal />
-
-          {/* 2) Enter OTP */}
-          <OTPVerificationModal
-            isOpen={showVerificationModal}
-            onClose={() => setShowVerificationModal(false)}
-            initialFirstName={prefill?.firstName || ""}
-            initialLastName={prefill?.lastName || ""}
-            isLoading={verifyOtpMutation.isPending}
-            onVerify={(payload) => {
-              const finalPhone = toE164With91Default(phoneNumber);
-              // pass the fetched names; payload.first/last may be ignored by your backend now
-              verifyOtpMutation.mutate({
-                phoneNumber: finalPhone,
-                code: payload.code,
-                firstName: prefill?.firstName || "",
-                lastName: prefill?.lastName || "",
-              });
-            }}
-            onChangePhone={() => {
-              setShowVerificationModal(false);
-              setPhoneNumber("");
-            }}
-          />
+            
+            <Button 
+              type="submit" 
+              size="lg"
+              className="w-full max-w-md h-14 text-lg rounded-full mx-auto flex items-center justify-center gap-2"
+              data-testid="button-login"
+              style={{ backgroundColor: primary }}
+              disabled={sendOtpMutation.isPending}
+            >
+              {sendOtpMutation.isPending ? "Sending..." : "Log in"}
+              <ArrowRight className="h-5 w-5" />
+            </Button>
+          </form>
         </div>
       </div>
+
+      <ConfirmUserModal />
+
+      <OTPVerificationModal
+        isOpen={showVerificationModal}
+        onClose={() => setShowVerificationModal(false)}
+        initialFirstName={prefill?.firstName || ""}
+        initialLastName={prefill?.lastName || ""}
+        isLoading={verifyOtpMutation.isPending}
+        onVerify={(payload) => {
+          const finalEmail = email.trim().toLowerCase();
+          verifyOtpMutation.mutate({
+            email: finalEmail,
+            code: payload.code,
+            firstName: payload.firstName,
+            lastName: payload.lastName,
+          });
+        }}
+        onChangeEmail={() => {
+          setShowVerificationModal(false);
+          setEmail("");
+        }}
+        primaryColor={primary}
+        companyName={company}
+      />
     </div>
   );
 }
+
+function isValidEmail(email: string): boolean {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+}
+

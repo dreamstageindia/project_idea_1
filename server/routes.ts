@@ -7,19 +7,12 @@ import {
   insertProductSchema,
   insertEmployeeSchema,
   insertCartItemSchema,
+  insertCategorySchema, // Add this import
 } from "@shared/schema";
 import { storage } from "./storage";
-import { sendOTP, verifyOTP } from "./auth-otp";
+import { sendOTP, verifyOTP, lookupByEmail } from "./auth-otp";
 import crypto from "crypto";
 import "dotenv/config";
-
-function normalizePhonePlus(input?: string | null): string {
-  if (!input) return "";
-  const digits = String(input).replace(/\D+/g, "");
-  if (!digits) return "";
-  if (digits.length <= 10) return `+91${digits}`;
-  return `+${digits}`;
-}
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(UPLOAD_DIR)) {
@@ -49,6 +42,11 @@ function toPublicUrl(absPath: string) {
   return `/uploads/${rel}`;
 }
 
+function isValidEmail(email: string): boolean {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+}
+
 export async function registerRoutes(app: Express): Promise<void> {
   app.use("/uploads", (await import("express")).default.static(UPLOAD_DIR));
 
@@ -60,6 +58,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.post("/api/auth/send-otp", sendOTP);
   app.post("/api/auth/verify-otp", verifyOTP);
+  app.get("/api/auth/lookup-by-email", lookupByEmail);
 
   app.post("/api/auth/logout", async (req, res) => {
     const token = req.headers.authorization?.replace("Bearer ", "");
@@ -80,39 +79,70 @@ export async function registerRoutes(app: Express): Promise<void> {
         employeeId: employee.employeeId ?? null,
         firstName: employee.firstName,
         lastName: employee.lastName,
-        phoneNumber: employee.phoneNumber ?? null,
+        email: employee.email,
         points: employee.points ?? 0,
       },
       expiresAt: session.expiresAt,
     });
   });
 
-  app.get("/api/products-admin", async (_req, res) => {
+  // Categories API
+  app.get("/api/categories", async (_req, res) => {
     try {
-      const products = await storage.getAllProducts();
-      const productsWithBackups: any[] = [];
-      for (const product of products) {
-        productsWithBackups.push(product);
-        if (product.stock === 0 && product.backupProductId) {
-          const backupProduct = await storage.getProduct(product.backupProductId);
-          if (backupProduct && (backupProduct.stock || 0) > 0) {
-            productsWithBackups.push({
-              ...backupProduct,
-              isBackup: true,
-              originalProductId: product.id,
-            });
-          }
-        }
-      }
-      res.json(productsWithBackups);
+      const categories = await storage.getAllCategories();
+      res.json(categories);
     } catch {
-      res.status(500).json({ message: "Error fetching products" });
+      res.status(500).json({ message: "Error fetching categories" });
     }
   });
 
+  app.get("/api/categories/:id/products", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const products = await storage.getProductsByCategory(id);
+      res.json(products);
+    } catch {
+      res.status(500).json({ message: "Error fetching category products" });
+    }
+  });
+
+  app.post("/api/admin/categories", async (req, res) => {
+    try {
+      const categoryData = insertCategorySchema.parse(req.body);
+      const category = await storage.createCategory(categoryData);
+      res.json(category);
+    } catch {
+      res.status(400).json({ message: "Invalid category data" });
+    }
+  });
+
+  app.put("/api/admin/categories/:id", async (req, res) => {
+    try {
+      const updates = req.body;
+      const category = await storage.updateCategory(req.params.id, updates);
+      if (!category) return res.status(404).json({ message: "Category not found" });
+      res.json(category);
+    } catch {
+      res.status(500).json({ message: "Error updating category" });
+    }
+  });
+
+  app.delete("/api/admin/categories/:id", async (req, res) => {
+    try {
+      const ok = await storage.deleteCategory(req.params.id);
+      if (!ok) return res.status(404).json({ message: "Category not found" });
+      res.json({ ok: true });
+    } catch {
+      res.status(500).json({ message: "Error deleting category" });
+    }
+  });
+
+  // Update products API to include categories
   app.get("/api/products", async (_req, res) => {
     try {
       const all = await storage.getAllProducts();
+      const categories = await storage.getAllCategories();
+      
       const byId = new Map(all.map((p) => [p.id, p]));
       const backupCandidateIds = new Set(
         all
@@ -121,17 +151,25 @@ export async function registerRoutes(app: Express): Promise<void> {
       );
       const originals = all.filter((p) => !backupCandidateIds.has(p.id));
       const visible: any[] = [];
+      
       for (const orig of originals) {
         const origStock = Number(orig.stock || 0);
         if (origStock > 0) {
-          visible.push(orig);
+          // Add category info to product
+          const category = categories.find(c => c.id === orig.categoryId);
+          visible.push({
+            ...orig,
+            category: category || null
+          });
         } else if (origStock <= 0 && orig.backupProductId) {
           const backup = byId.get(orig.backupProductId);
           if (backup && Number(backup.stock || 0) > 0 && backup.isActive !== false) {
+            const category = categories.find(c => c.id === backup.categoryId);
             visible.push({
               ...backup,
               isBackup: true,
               originalProductId: orig.id,
+              category: category || null
             });
           }
         }
@@ -142,11 +180,52 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.get("/api/products-admin", async (_req, res) => {
+    try {
+      const products = await storage.getAllProducts();
+      const categories = await storage.getAllCategories();
+      const productsWithBackups: any[] = [];
+      
+      for (const product of products) {
+        // Add category info to product
+        const category = categories.find(c => c.id === product.categoryId);
+        productsWithBackups.push({
+          ...product,
+          category: category || null
+        });
+        
+        if (product.stock === 0 && product.backupProductId) {
+          const backupProduct = await storage.getProduct(product.backupProductId);
+          if (backupProduct && (backupProduct.stock || 0) > 0) {
+            const backupCategory = categories.find(c => c.id === backupProduct.categoryId);
+            productsWithBackups.push({
+              ...backupProduct,
+              isBackup: true,
+              originalProductId: product.id,
+              category: backupCategory || null
+            });
+          }
+        }
+      }
+      res.json(productsWithBackups);
+    } catch {
+      res.status(500).json({ message: "Error fetching products" });
+    }
+  });
+
   app.get("/api/products/:id", async (req, res) => {
     try {
       const product = await storage.getProduct(req.params.id);
       if (!product) return res.status(404).json({ message: "Product not found" });
-      res.json(product);
+      
+      // Add category info to single product
+      const categories = await storage.getAllCategories();
+      const category = categories.find(c => c.id === product.categoryId);
+      
+      res.json({
+        ...product,
+        category: category || null
+      });
     } catch {
       res.status(500).json({ message: "Error fetching product" });
     }
@@ -159,11 +238,20 @@ export async function registerRoutes(app: Express): Promise<void> {
       const session = await storage.getSession(token);
       if (!session) return res.status(401).json({ message: "Invalid session" });
       const items = await storage.getCartItems(session.employeeId);
+      const categories = await storage.getAllCategories();
+      
       const detailedItems = await Promise.all(
-        items.map(async (item) => ({
-          ...item,
-          product: await storage.getProduct(item.productId),
-        }))
+        items.map(async (item) => {
+          const product = await storage.getProduct(item.productId);
+          const category = categories.find(c => c.id === product?.categoryId);
+          return {
+            ...item,
+            product: product ? {
+              ...product,
+              category: category || null
+            } : null
+          };
+        })
       );
       res.json(detailedItems);
     } catch {
@@ -536,12 +624,23 @@ export async function registerRoutes(app: Express): Promise<void> {
       const session = await storage.getSession(token);
       if (!session) return res.status(401).json({ message: "Invalid session" });
       const orders = await storage.getOrdersByEmployeeId(session.employeeId);
+      const categories = await storage.getAllCategories();
+      
       const detailedOrders = await Promise.all(
-        orders.map(async (order) => ({
-          order,
-          product: await storage.getProduct(order.productId),
-          employee: await storage.getEmployee(order.employeeId),
-        }))
+        orders.map(async (order) => {
+          const product = await storage.getProduct(order.productId);
+          const category = categories.find(c => c.id === product?.categoryId);
+          const employee = await storage.getEmployee(order.employeeId);
+          
+          return {
+            order,
+            product: product ? {
+              ...product,
+              category: category || null
+            } : null,
+            employee
+          };
+        })
       );
       res.json(detailedOrders);
     } catch {
@@ -554,17 +653,22 @@ export async function registerRoutes(app: Express): Promise<void> {
       const emps = await storage.getAllEmployees();
       const prods = await storage.getAllProducts();
       const ords = await storage.getAllOrders();
+      const categories = await storage.getAllCategories();
+      
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const ordersToday = ords.filter((o) => o.orderDate && o.orderDate >= today);
       const lockedAccounts = emps.filter((e) => e.isLocked);
+      
       res.json({
         totalEmployees: emps.length,
         totalProducts: prods.length,
+        totalCategories: categories.length,
         ordersToday: ordersToday.length,
         lockedAccounts: lockedAccounts.length,
       });
-    } catch {
+    } catch (error: any) {
+      console.error("Stats error:", error);
       res.status(500).json({ message: "Error fetching stats" });
     }
   });
@@ -581,11 +685,11 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.post("/api/admin/employees", async (req, res) => {
     try {
       const body = insertEmployeeSchema.parse(req.body);
-      const phone = normalizePhonePlus(body.phoneNumber);
-      if (!phone) return res.status(400).json({ message: "Invalid phoneNumber" });
-      const exists = await storage.getEmployeeByPhone(phone);
-      if (exists) return res.status(409).json({ message: "Employee already exists (phone)" });
-      const employee = await storage.createEmployee({ ...body, phoneNumber: phone });
+      const email = body.email.trim().toLowerCase();
+      if (!isValidEmail(email)) return res.status(400).json({ message: "Invalid email" });
+      const exists = await storage.getEmployeeByEmail(email);
+      if (exists) return res.status(409).json({ message: "Employee already exists (email)" });
+      const employee = await storage.createEmployee({ ...body, email });
       res.json(employee);
     } catch {
       res.status(400).json({ message: "Invalid employee data" });
@@ -600,14 +704,13 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       for (const r of rows) {
         try {
-          const rawPhone = r.phoneNumber ? String(r.phoneNumber).trim() : "";
-          const phone = normalizePhonePlus(rawPhone);
-          if (!phone) {
+          const rawEmail = r.email ? String(r.email).trim().toLowerCase() : "";
+          if (!rawEmail || !isValidEmail(rawEmail)) {
             skipped++;
             continue;
           }
 
-          const exists = await storage.getEmployeeByPhone(phone);
+          const exists = await storage.getEmployeeByEmail(rawEmail);
           if (exists) {
             const pts = Number(r.points);
             if (Number.isFinite(pts)) {
@@ -629,7 +732,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           await storage.createEmployee({
             firstName,
             lastName,
-            phoneNumber: phone,
+            email: rawEmail,
             points,
           } as any);
 
@@ -649,10 +752,10 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const { id } = req.params;
       const updates = { ...req.body };
-      if (updates.phoneNumber !== undefined) {
-        const phone = normalizePhonePlus(updates.phoneNumber);
-        if (!phone) return res.status(400).json({ message: "Invalid phoneNumber" });
-        updates.phoneNumber = phone;
+      if (updates.email !== undefined) {
+        const email = updates.email.trim().toLowerCase();
+        if (!isValidEmail(email)) return res.status(400).json({ message: "Invalid email" });
+        updates.email = email;
       }
       const updated = await storage.updateEmployee(id, updates);
       if (!updated) return res.status(404).json({ message: "Employee not found" });
@@ -677,12 +780,23 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/admin/orders", async (_req, res) => {
     try {
       const ords = await storage.getAllOrders();
+      const categories = await storage.getAllCategories();
+      
       const withDetails = await Promise.all(
-        ords.map(async (o) => ({
-          ...o,
-          employee: await storage.getEmployee(o.employeeId),
-          product: await storage.getProduct(o.productId),
-        }))
+        ords.map(async (o) => {
+          const product = await storage.getProduct(o.productId);
+          const category = categories.find(c => c.id === product?.categoryId);
+          const employee = await storage.getEmployee(o.employeeId);
+          
+          return {
+            ...o,
+            product: product ? {
+              ...product,
+              category: category || null
+            } : null,
+            employee
+          };
+        })
       );
       res.json(withDetails);
     } catch {
@@ -739,14 +853,12 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.get("/api/auth/lookup-by-phone", async (req, res) => {
+  app.get("/api/auth/lookup-by-email", async (req, res) => {
     res.set("Cache-Control", "no-store");
     try {
-      const raw = String(req.query.phoneNumber || "");
-      const digits = raw.replace(/\D+/g, "");
-      if (!digits) return res.status(400).json({ message: "phoneNumber required" });
-      const phone = digits.length == 10 ? `+91${digits}` : `+${digits}`;
-      const emp = await storage.getEmployeeByPhone(phone);
+      const email = String(req.query.email || "").trim().toLowerCase();
+      if (!email) return res.status(400).json({ message: "email required" });
+      const emp = await storage.getEmployeeByEmail(email);
       if (!emp) return res.status(404).json({ message: "Not found" });
       res.json({ firstName: emp.firstName, lastName: emp.lastName });
     } catch {
