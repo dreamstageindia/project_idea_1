@@ -16,7 +16,7 @@ import { SiApple, SiSamsung, SiSony, SiNike, SiAdidas, SiPuma } from "react-icon
 
 // Import images
 import heroImg from '@assets/generated_images/corporate_gifting_hero_image.png';
-import unboxingBg from '@assets/generated_images/white_gift_box_background.png';
+import backpackImg from '@assets/generated_images/professional_laptop_backpack_product.png';
 
 type Branding = {
   id: string;
@@ -75,7 +75,7 @@ function BrandsShowcase() {
   ];
 
   return (
-    <div className="py-12 bg-gray-50">
+    <div className="py-12 bg-muted/30">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <h2 className="text-2xl font-semibold text-center mb-8" data-testid="text-brands-title">
           Brands we deal in
@@ -107,7 +107,7 @@ function CategorySidebar({
   categories: Category[];
 }) {
   return (
-    <div className="w-full lg:w-64 bg-white rounded-xl shadow-sm border border-gray-200 p-6 sticky top-24">
+    <div className="w-full lg:w-64 bg-white rounded-xl shadow-sm border p-6 sticky top-24">
       <h3 className="font-semibold text-lg mb-6 text-gray-900">Categories</h3>
       <div className="space-y-3">
         <button
@@ -138,28 +138,41 @@ function CategorySidebar({
   );
 }
 
-// Unboxing Happiness Component
-function UnboxingHappiness() {
+// Product of the Month Component
+function ProductOfTheMonth() {
   return (
-    <div 
-      className="w-full rounded-2xl shadow-sm border border-gray-200 overflow-hidden relative min-h-64 flex items-center justify-center"
-      style={{
-        backgroundImage: `url(${unboxingBg})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat'
-      }}
-    >
-      <div className="absolute inset-0 bg-black/10"></div>
-      <div className="relative z-10 text-center p-8">
-        <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4 drop-shadow-lg">
-          Unboxing Happiness !!
-        </h2>
-        <p className="text-lg text-gray-700 max-w-2xl mx-auto drop-shadow-md">
-          Discover the perfect gifts that bring joy and create memorable moments. 
-          Select from our exclusive collection curated just for you.
-        </p>
+    <div className="w-full lg:w-80 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-2xl shadow-sm border border-gray-200 p-6 sticky top-24">
+      <div className="text-center mb-4">
+        <h3 className="font-bold text-xl text-gray-900 mb-2">Product of the Month</h3>
+        <div className="w-16 h-1 bg-blue-600 mx-auto rounded-full"></div>
       </div>
+      
+      <div className="bg-white rounded-xl p-4 shadow-sm mb-4">
+        <img 
+          src={backpackImg} 
+          alt="Product of the Month" 
+          className="w-full h-48 object-contain mb-4 rounded-lg"
+        />
+        <h4 className="font-semibold text-gray-900 text-center mb-2">
+          Professional Laptop Backpack
+        </h4>
+        <p className="text-gray-600 text-sm text-center mb-3">
+          Premium quality with ergonomic design
+        </p>
+        <div className="flex justify-center items-center space-x-2">
+          <span className="text-2xl font-bold text-blue-600">1200</span>
+          <span className="text-gray-500 line-through text-sm">1500</span>
+          <span className="bg-green-100 text-green-600 text-xs font-medium px-2 py-1 rounded-full">
+            -20%
+          </span>
+        </div>
+      </div>
+      
+      <Button 
+        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-all duration-200 shadow-md hover:shadow-lg"
+      >
+        View Details
+      </Button>
     </div>
   );
 }
@@ -196,7 +209,7 @@ function Hero({ backgroundImage, companyName, employeeName }: {
             Welcome to {companyName}
           </h1>
           <p className="text-2xl font-semibold mb-6 drop-shadow-md">
-            CORPORATE BRAND STORE
+          CORPORATE BRAND STORE
           </p>
           <p className="text-xl opacity-90 drop-shadow-md">
             Dear {employeeName}, choose from our exclusive collection of premium gifts
@@ -463,8 +476,6 @@ export default function Dashboard() {
 
   const maxDisplay = maxSelections === -1 ? "∞" : maxSelections;
 
-  const showProductsGrid = selectedCategory !== "all" && displayProducts.length > 0;
-
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -535,41 +546,47 @@ export default function Dashboard() {
                 categories={categories}
               />
               
-              {/* Main Content Area */}
+              {/* Products Grid */}
               <main className="flex-1">
-                {/* Show Unboxing Happiness when no category is selected */}
-                {!showProductsGrid && (
-                  <UnboxingHappiness />
-                )}
-
-                {/* Show Products Grid when a category is selected */}
-                {showProductsGrid && (
-                  <>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6 mb-8">
-                      {displayProducts.map((product) => (
-                        <ProductCard
-                          key={product.id}
-                          product={product}
-                          onView={handleViewProduct}
-                          onAddToCart={handleAddToCart}
-                        />
-                      ))}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6 mb-8">
+                  {displayProducts.length > 0 ? (
+                    displayProducts.map((product) => (
+                      <ProductCard
+                        key={product.id}
+                        product={product}
+                        onView={handleViewProduct}
+                        onAddToCart={handleAddToCart}
+                      />
+                    ))
+                  ) : (
+                    <div className="col-span-full text-center py-12">
+                      <ShoppingCart className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+                      <h3 className="text-lg font-semibold text-muted-foreground mb-2">
+                        No products found
+                      </h3>
+                      <p className="text-muted-foreground">
+                        {selectedCategory === "all" 
+                          ? "No products available at the moment." 
+                          : "No products found in this category."}
+                      </p>
                     </div>
-                    
-                    {displayProducts.length > 0 && (
-                      <div className="flex justify-center">
-                        <Button 
-                          size="lg" 
-                          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-8 py-3 rounded-xl"
-                          data-testid="button-view-more"
-                        >
-                          VIEW MORE
-                        </Button>
-                      </div>
-                    )}
-                  </>
+                  )}
+                </div>
+                
+                {displayProducts.length > 0 && (
+                  <div className="flex justify-center">
+                    <Button 
+                      size="lg" 
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-8 py-3 rounded-xl"
+                      data-testid="button-view-more"
+                    >
+                      VIEW MORE
+                    </Button>
+                  </div>
                 )}
               </main>
+              
+              
             </div>
           </div>
 
