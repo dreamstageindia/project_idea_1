@@ -25,6 +25,9 @@ export function ProductEditModal({ open, onClose, product, products, categories 
   const qc = useQueryClient();
   const [editDraft, setEditDraft] = useState<Partial<Product>>({});
   const [editImages, setEditImages] = useState<string[]>([]);
+  const [colorsInput, setColorsInput] = useState<string>("");
+  const [packagesInput, setPackagesInput] = useState<string>("");
+  const [specificationsInput, setSpecificationsInput] = useState<string>("");
 
   useEffect(() => {
     if (product) {
@@ -41,6 +44,13 @@ export function ProductEditModal({ open, onClose, product, products, categories 
         categoryId: product.categoryId ?? null,
       });
       setEditImages(product.images ? product.images.slice() : []);
+      setColorsInput((product.colors ?? []).join(", "));
+      setPackagesInput((product.packagesInclude ?? []).join("\n"));
+      setSpecificationsInput(
+        Object.entries(product.specifications ?? {})
+          .map(([k, v]) => `${k}: ${v}`)
+          .join("\n")
+      );
     }
   }, [product]);
 
@@ -61,12 +71,36 @@ export function ProductEditModal({ open, onClose, product, products, categories 
     }),
   });
 
+  // Parse specifications from text input to object
+  const parseSpecifications = (input: string): Record<string, string> => {
+    const obj: Record<string, string> = {};
+    if (!input.trim()) return obj;
+    
+    input.split("\n").forEach((line) => {
+      const trimmedLine = line.trim();
+      if (!trimmedLine) return;
+      
+      const idx = trimmedLine.indexOf(":");
+      if (idx > 0) {
+        const key = trimmedLine.slice(0, idx).trim();
+        const value = trimmedLine.slice(idx + 1).trim();
+        if (key) obj[key] = value;
+      }
+    });
+    return obj;
+  };
+
   const handleSave = () => {
     if (!product) return;
+    
     const updates: Partial<Product> = {
       ...editDraft,
       images: editImages,
+      colors: colorsInput.split(",").map(s => s.trim()).filter(Boolean),
+      packagesInclude: packagesInput.split("\n").map(s => s.trim()).filter(Boolean),
+      specifications: parseSpecifications(specificationsInput),
     };
+    
     updateProductMutation.mutate({ id: product.id, updates });
   };
 
@@ -132,13 +166,9 @@ export function ProductEditModal({ open, onClose, product, products, categories 
             <div>
               <Label>Colors (comma-separated)</Label>
               <Input
-                value={(editDraft.colors ?? []).join(",")}
-                onChange={(e) =>
-                  setEditDraft((d) => ({
-                    ...d,
-                    colors: e.target.value.split(",").map((s) => s.trim()).filter(Boolean),
-                  }))
-                }
+                value={colorsInput}
+                onChange={(e) => setColorsInput(e.target.value)}
+                placeholder="Red, Blue, Green"
               />
             </div>
             <div>
@@ -188,40 +218,26 @@ export function ProductEditModal({ open, onClose, product, products, categories 
             </div>
 
             <div className="md:col-span-2">
-              <Label>Packages Include</Label>
+              <Label>Packages Include (one per line)</Label>
               <Textarea
-                value={(editDraft.packagesInclude ?? []).join("\n")}
-                onChange={(e) =>
-                  setEditDraft((d) => ({
-                    ...d,
-                    packagesInclude: e.target.value
-                      .split("\n")
-                      .map((s) => s.trim())
-                      .filter(Boolean),
-                  }))
-                }
+                value={packagesInput}
+                onChange={(e) => setPackagesInput(e.target.value)}
+                placeholder="Item 1&#10;Item 2&#10;Item 3"
+                rows={3}
               />
             </div>
 
             <div className="md:col-span-2">
-              <Label>Specifications</Label>
+              <Label>Specifications (key:value, one per line)</Label>
               <Textarea
-                value={Object.entries(editDraft.specifications ?? {})
-                  .map(([k, v]) => `${k}:${v}`)
-                  .join("\n")}
-                onChange={(e) => {
-                  const obj: Record<string, string> = {};
-                  e.target.value.split("\n").forEach((line) => {
-                    const idx = line.indexOf(":");
-                    if (idx > 0) {
-                      const k = line.slice(0, idx).trim();
-                      const v = line.slice(idx + 1).trim();
-                      if (k) obj[k] = v;
-                    }
-                  });
-                  setEditDraft((d) => ({ ...d, specifications: obj }));
-                }}
+                value={specificationsInput}
+                onChange={(e) => setSpecificationsInput(e.target.value)}
+                placeholder="Weight: 2kg&#10;Dimensions: 10x20x5cm&#10;Material: Plastic"
+                rows={4}
               />
+              <p className="text-sm text-muted-foreground mt-1">
+                Format: Key: Value (one specification per line)
+              </p>
             </div>
 
             <div className="md:col-span-2">
@@ -299,7 +315,7 @@ export function ProductEditModal({ open, onClose, product, products, categories 
           </Button>
           <Button onClick={handleSave} disabled={updateProductMutation.isPending}>
             <Save className="h-4 w-4 mr-1" />
-            Save Changes
+            {updateProductMutation.isPending ? "Saving..." : "Save Changes"}
           </Button>
         </div>
       </DialogContent>
