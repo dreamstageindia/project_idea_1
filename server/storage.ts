@@ -133,51 +133,10 @@ class DrizzleStorage implements IStorage {
     return rows[0];
   }
 
-  // In your storage.ts, update the updateProduct method:
-async updateProduct(id: string, updates: Partial<Product>) {
-  try {
-    console.log("Storage: Updating product with ID:", id);
-    console.log("Storage: Updates received:", updates);
-    
-    // Prepare the update data - ensure all fields are properly formatted
-    const updateData: any = { ...updates };
-    
-    // Log the specific JSON fields to debug
-    console.log("Storage: Colors before update:", updates.colors);
-    console.log("Storage: PackagesInclude before update:", updates.packagesInclude);
-    console.log("Storage: Specifications before update:", updates.specifications);
-    console.log("Storage: Images before update:", updates.images);
-    
-    // Ensure arrays are properly set (Drizzle should handle JSON automatically)
-    if (updates.colors !== undefined) {
-      updateData.colors = updates.colors || [];
-    }
-    if (updates.packagesInclude !== undefined) {
-      updateData.packagesInclude = updates.packagesInclude || [];
-    }
-    if (updates.specifications !== undefined) {
-      updateData.specifications = updates.specifications || {};
-    }
-    if (updates.images !== undefined) {
-      updateData.images = updates.images || [];
-    }
-    
-    console.log("Storage: Final update data:", updateData);
-    
-    const result = await db.update(products)
-      .set(updateData)
-      .where(eq(products.id, id))
-      .returning();
-    
-    const updatedProduct = result[0];
-    console.log("Storage: Updated product result:", updatedProduct);
-    
-    return updatedProduct || null;
-  } catch (error) {
-    console.error("Storage: Error updating product:", error);
-    throw error;
+  async updateProduct(id: string, updates: Partial<Product>) {
+    const rows = await db.update(products).set(updates).where(eq(products.id, id)).returning();
+    return rows[0];
   }
-}
 
   async deleteProduct(id: string) {
     const res = await db.delete(products).where(eq(products.id, id));
