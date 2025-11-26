@@ -1,534 +1,292 @@
-import { useState, useEffect } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+// src/components/product/product-detail-modal.tsx
+import { memo, useEffect } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { ProductCarousel } from "./product-carousel";
+import { X, ShoppingCart, CheckCircle, Plus, Minus } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
-import { Save, X, ImageIcon, ArrowLeft, ArrowRight, Trash } from "lucide-react";
-import { uploadFiles, move, removeAt } from "@/lib/admin-utils";
-import type { Product } from "./types";
-import type { Category } from "@/components/admin/categories/types";
 
-interface ProductEditModalProps {
-  open: boolean;
+interface ProductDetailModalProps {
+  isOpen: boolean;
   onClose: () => void;
-  product: Product | null;
-  products: Product[];
-  categories: Category[];
+  product: any;
+  selectedColor: string;
+  onColorChange: (color: string) => void;
+  quantity: number;
+  onQuantityChange: (qty: number) => void;
+  onAddToCart: (product: any, color: string, quantity: number) => void;
 }
 
-// Debug component for specifications
-const SpecificationsDebug = ({ input }: { input: string }) => {
-  const parseSpecifications = (input: string): Record<string, string> => {
-    console.log("=== PARSING SPECIFICATIONS ===");
-    console.log("Raw input:", input);
-    
-    const obj: Record<string, string> = {};
-    
-    if (!input || !input.trim()) {
-      console.log("Empty input, returning empty object");
-      return obj;
-    }
-    
-    const lines = input.split("\n");
-    console.log("Total lines:", lines.length);
-    
-    lines.forEach((line, index) => {
-      const trimmedLine = line.trim();
-      console.log(`Line ${index + 1}: "${trimmedLine}"`);
-      
-      if (!trimmedLine) {
-        console.log(`Line ${index + 1}: Empty, skipping`);
-        return;
-      }
-      
-      // Handle both colon and equals sign as separators
-      const separatorIndex = trimmedLine.search(/[:=]/);
-      console.log(`Line ${index + 1}: Separator position: ${separatorIndex}`);
-      
-      if (separatorIndex > 0) {
-        // Has separator - split into key:value
-        const key = trimmedLine.slice(0, separatorIndex).trim();
-        const value = trimmedLine.slice(separatorIndex + 1).trim();
-        console.log(`Line ${index + 1}: Parsed as key="${key}", value="${value}"`);
-        
-        if (key) {
-          obj[key] = value;
-          console.log(`Line ${index + 1}: Added to object`);
-        } else {
-          console.log(`Line ${index + 1}: Empty key, skipping`);
-        }
-      } else if (separatorIndex === -1) {
-        // No separator - use the whole line as key with empty value
-        console.log(`Line ${index + 1}: No separator found, using as key with empty value`);
-        obj[trimmedLine] = "";
-      } else {
-        // Separator at start (like ":value") - skip or handle as malformed
-        console.log(`Line ${index + 1}: Separator at start, skipping`);
-      }
-    });
-    
-    console.log("Final parsed object:", obj);
-    console.log("Object keys:", Object.keys(obj));
-    return obj;
-  };
-
-  const parsedSpecs = parseSpecifications(input);
-  
-  return (
-    <div className="md:col-span-2 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-      <h4 className="font-semibold text-yellow-800 mb-2">Debug: Specifications</h4>
-      <div className="grid grid-cols-2 gap-4 text-sm">
-        <div>
-          <p className="font-medium">Raw Input:</p>
-          <pre className="bg-white p-2 rounded border text-xs overflow-auto">
-            {input || '(empty)'}
-          </pre>
-        </div>
-        <div>
-          <p className="font-medium">Parsed Object:</p>
-          <pre className="bg-white p-2 rounded border text-xs overflow-auto">
-            {JSON.stringify(parsedSpecs, null, 2)}
-          </pre>
-        </div>
-      </div>
-      <div className="mt-2 text-xs text-yellow-600">
-        <p>Lines: {input.split('\n').length} | Non-empty lines: {input.split('\n').filter(line => line.trim()).length}</p>
-        <p>Contains colon: {input.includes(':') ? 'Yes' : 'No'}</p>
-        <p>Parsed specifications: {Object.keys(parsedSpecs).length}</p>
-      </div>
-    </div>
-  );
-};
-
-export function ProductEditModal({ open, onClose, product, products, categories }: ProductEditModalProps) {
+function _ProductDetailModal({
+  isOpen,
+  onClose,
+  product,
+  selectedColor,
+  onColorChange,
+  quantity,
+  onQuantityChange,
+  onAddToCart,
+}: ProductDetailModalProps) {
   const { toast } = useToast();
-  const qc = useQueryClient();
-  const [editDraft, setEditDraft] = useState<Partial<Product>>({});
-  const [editImages, setEditImages] = useState<string[]>([]);
-  const [colorsInput, setColorsInput] = useState<string>("");
-  const [packagesInput, setPackagesInput] = useState<string>("");
-  const [specificationsInput, setSpecificationsInput] = useState<string>("");
-
-  useEffect(() => {
-    if (product) {
-      console.log("Initializing edit modal with product:", product);
-      console.log("Product specifications:", product.specifications);
-      console.log("Product colors:", product.colors);
-      console.log("Product packagesInclude:", product.packagesInclude);
-      
-      setEditDraft({
-        name: product.name,
-        price: product.price,
-        colors: product.colors ?? [],
-        stock: product.stock ?? 0,
-        packagesInclude: product.packagesInclude ?? [],
-        specifications: product.specifications ?? {},
-        sku: product.sku,
-        isActive: product.isActive,
-        backupProductId: product.backupProductId ?? null,
-        categoryId: product.categoryId ?? null,
-      });
-      setEditImages(product.images ? product.images.slice() : []);
-      setColorsInput((product.colors ?? []).join(", "));
-      setPackagesInput((product.packagesInclude ?? []).join("\n"));
-      
-      // Format specifications for display
-      const specsText = Object.entries(product.specifications ?? {})
-        .map(([k, v]) => `${k}: ${v}`)
-        .join("\n");
-      console.log("Formatted specifications text:", specsText);
-      setSpecificationsInput(specsText);
-    }
-  }, [product]);
-
-  const updateProductMutation = useMutation({
-    mutationFn: async (payload: { id: string; updates: Partial<Product> }) => {
-      console.log("=== SENDING UPDATE REQUEST ===");
-      console.log("Product ID:", payload.id);
-      console.log("Full update data:", payload.updates);
-      console.log("Specifications being sent:", payload.updates.specifications);
-      console.log("Colors being sent:", payload.updates.colors);
-      console.log("PackagesInclude being sent:", payload.updates.packagesInclude);
-      
-      const res = await apiRequest("PUT", `/api/admin/products/${payload.id}`, payload.updates);
-      const result = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(result.message || "Failed to update product");
-      }
-      
-      return result;
-    },
-    onSuccess: (data) => {
-      console.log("=== UPDATE SUCCESSFUL ===");
-      console.log("Response data:", data);
-      qc.invalidateQueries({ queryKey: ["/api/products-admin"] });
-      toast({ title: "Product updated successfully" });
-      onClose();
-    },
-    onError: (e: any) => {
-      console.error("=== UPDATE ERROR ===", e);
-      toast({ 
-        title: "Update failed", 
-        description: e.message, 
-        variant: "destructive" 
-      });
-    },
-  });
-
-  // Parse specifications from text input to object
-  const parseSpecifications = (input: string): Record<string, string> => {
-    console.log("=== PARSING SPECIFICATIONS ===");
-    console.log("Raw input:", input);
-    
-    const obj: Record<string, string> = {};
-    
-    if (!input || !input.trim()) {
-      console.log("Empty input, returning empty object");
-      return obj;
-    }
-    
-    const lines = input.split("\n");
-    console.log("Total lines:", lines.length);
-    
-    lines.forEach((line, index) => {
-      const trimmedLine = line.trim();
-      console.log(`Line ${index + 1}: "${trimmedLine}"`);
-      
-      if (!trimmedLine) {
-        console.log(`Line ${index + 1}: Empty, skipping`);
-        return;
-      }
-      
-      // Handle both colon and equals sign as separators
-      const separatorIndex = trimmedLine.search(/[:=]/);
-      console.log(`Line ${index + 1}: Separator position: ${separatorIndex}`);
-      
-      if (separatorIndex > 0) {
-        const key = trimmedLine.slice(0, separatorIndex).trim();
-        const value = trimmedLine.slice(separatorIndex + 1).trim();
-        console.log(`Line ${index + 1}: Parsed as key="${key}", value="${value}"`);
-        
-        if (key) {
-          obj[key] = value;
-          console.log(`Line ${index + 1}: Added to object`);
-        } else {
-          console.log(`Line ${index + 1}: Empty key, skipping`);
-        }
-      } else {
-        console.log(`Line ${index + 1}: No separator found or separator at start, skipping`);
-      }
-    });
-    
-    console.log("Final parsed object:", obj);
-    console.log("Object keys:", Object.keys(obj));
-    return obj;
-  };
-
-  const handleSave = () => {
-    if (!product) return;
-    
-    console.log("=== STARTING SAVE PROCESS ===");
-    
-    // Parse the current inputs
-    const parsedColors = colorsInput.split(",").map(s => s.trim()).filter(Boolean);
-    const parsedPackages = packagesInput.split("\n").map(s => s.trim()).filter(Boolean);
-    const parsedSpecifications = parseSpecifications(specificationsInput);
-    
-    console.log("=== PARSED DATA ===");
-    console.log("Colors input:", colorsInput);
-    console.log("Parsed colors:", parsedColors);
-    console.log("Packages input:", packagesInput);
-    console.log("Parsed packages:", parsedPackages);
-    console.log("Specifications input:", specificationsInput);
-    console.log("Parsed specifications:", parsedSpecifications);
-    
-    // Validate required fields
-    if (!editDraft.name?.trim()) {
-      toast({
-        title: "Validation Error",
-        description: "Product name is required",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    if (!editDraft.sku?.trim()) {
-      toast({
-        title: "Validation Error",
-        description: "SKU is required",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    // Build the complete update data
-    const updates: Partial<Product> = {
-      name: editDraft.name.trim(),
-      price: editDraft.price || "0.00",
-      sku: editDraft.sku.trim(),
-      stock: editDraft.stock || 0,
-      categoryId: editDraft.categoryId || null,
-      backupProductId: editDraft.backupProductId || null,
-      isActive: editDraft.isActive !== false,
-      images: editImages,
-      colors: parsedColors,
-      packagesInclude: parsedPackages,
-      specifications: parsedSpecifications,
-    };
-
-    console.log("=== FINAL UPDATE PAYLOAD ===");
-    console.log("Updates object:", updates);
-    console.log("JSON stringified:", JSON.stringify(updates, null, 2));
-    
-    updateProductMutation.mutate({ id: product.id, updates });
-  };
 
   if (!product) return null;
 
+  const { data: branding } = useQuery({
+    queryKey: ["/api/admin/branding"],
+  });
+
+  const inrPerPoint = parseFloat(branding?.inrPerPoint || "1");
+  const pointsRequired = Math.ceil(parseFloat(product.price) / inrPerPoint);
+
+  useEffect(() => {
+    if (!isOpen || !product) return;
+    
+    // Debug log to check what colors are available
+    console.log("Product colors in modal:", product.colors);
+    console.log("Product data in modal:", product);
+    
+    const first = product.colors?.[0] || "";
+    if (first && selectedColor !== first) {
+      console.log("Setting initial color to:", first);
+      onColorChange(first);
+    }
+  }, [isOpen, product?.id, product?.colors, selectedColor, onColorChange]);
+
+  const getColorStyle = (color: string) => {
+    if (color.match(/^#[0-9A-Fa-f]{6}$/)) {
+      return "";
+    }
+    const colorMap: Record<string, string> = {
+      black: "bg-black",
+      white: "bg-white border-2 border-gray-300",
+      blue: "bg-blue-600",
+      red: "bg-red-600",
+      green: "bg-green-600",
+      yellow: "bg-yellow-400",
+      purple: "bg-purple-600",
+      pink: "bg-pink-500",
+      orange: "bg-orange-500",
+      brown: "bg-amber-900",
+      gray: "bg-gray-500",
+      charcoal: "bg-gray-800",
+      navy: "bg-blue-900",
+      "space-gray": "bg-gray-600",
+      silver: "bg-gray-300",
+      gold: "bg-yellow-300",
+      "rose-gold": "bg-gradient-to-br from-rose-300 to-amber-200",
+    };
+    return colorMap[color.toLowerCase()] || "bg-gray-400";
+  };
+
+  const getColorInlineStyle = (color: string) => {
+    if (color.match(/^#[0-9A-Fa-f]{6}$/)) {
+      return { backgroundColor: color };
+    }
+    return {};
+  };
+
+  const handleAddToCart = () => {
+    if (product.colors?.length > 0 && !selectedColor) {
+      toast({
+        title: "Error",
+        description: "Please select a color before adding to cart.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (quantity < 1 || quantity > product.stock) {
+      toast({
+        title: "Error",
+        description: `Please select a valid quantity (1 to ${product.stock}).`,
+        variant: "destructive",
+      });
+      return;
+    }
+    onAddToCart(product, selectedColor || null, quantity);
+  };
+
+  // Check if product has colors and log for debugging
+  const hasColors = Array.isArray(product.colors) && product.colors.length > 0;
+  console.log("Has colors:", hasColors, "Colors array:", product.colors);
+
   return (
-    <Dialog open={open} onOpenChange={(o) => (o ? null : onClose())}>
-      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
-        <div className="mb-4 flex-shrink-0">
-          <h3 className="text-lg font-semibold">Edit Product</h3>
-          <p className="text-sm text-muted-foreground">
-            SKU: <span className="font-mono">{product.sku}</span> | ID: <span className="font-mono text-xs">{product.id}</span>
-          </p>
-        </div>
-
-        <div className="flex-1 overflow-y-auto pr-2">
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="edit-name">Name *</Label>
-              <Input
-                id="edit-name"
-                value={editDraft.name ?? ""}
-                onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
-                placeholder="Product name"
-              />
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto p-0" data-testid="modal-product-detail" style={{ zIndex: 1002 }}>
+        <div className="grid md:grid-cols-2 gap-0 min-h-[600px]">
+          {/* Image Section - Fixed layout */}
+          <div className="flex flex-col p-6 bg-white">
+            <div className="flex-1 flex items-center justify-center min-h-[400px] bg-gray-50 rounded-lg mb-4">
+              <ProductCarousel images={product.images || []} alt={product.name} />
             </div>
-            <div>
-              <Label htmlFor="edit-price">Price *</Label>
-              <Input
-                id="edit-price"
-                type="number"
-                step="0.01"
-                min="0"
-                value={String(editDraft.price ?? "")}
-                onChange={(e) => setEditDraft((d) => ({ ...d, price: e.target.value }))}
-                placeholder="0.00"
-              />
+            <div className="flex space-x-2 overflow-x-auto pt-4">
+              {(product.images || []).map((image: string, index: number) => (
+                <div key={index} className="flex-shrink-0 w-20 h-20 bg-gray-100 rounded-lg overflow-hidden border-2 border-transparent hover:border-blue-500 transition-colors">
+                  <img
+                    src={image}
+                    alt={`${product.name} thumbnail ${index + 1}`}
+                    className="w-full h-full object-cover"
+                    data-testid={`thumbnail-${index}`}
+                  />
+                </div>
+              ))}
             </div>
-
-            <div>
-              <Label htmlFor="edit-category">Category</Label>
-              <select
-                id="edit-category"
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                value={editDraft.categoryId ?? ""}
-                onChange={(e) =>
-                  setEditDraft((d) => ({
-                    ...d,
-                    categoryId: e.target.value ? e.target.value : null,
-                  }))
-                }
+          </div>
+          
+          {/* Details Section */}
+          <div className="p-8 bg-muted/30 flex flex-col">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-3xl font-bold" data-testid="text-product-detail-name">
+                {product.name}
+              </h2>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onClose}
+                data-testid="button-close-product-detail"
+                aria-label="Close"
+                className="hover:bg-gray-100 rounded-full"
               >
-                <option value="">— No Category —</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
+                <X className="h-6 w-6" />
+              </Button>
             </div>
-            <div>
-              <Label htmlFor="edit-sku">SKU *</Label>
-              <Input
-                id="edit-sku"
-                value={editDraft.sku ?? ""}
-                onChange={(e) => setEditDraft((d) => ({ ...d, sku: e.target.value }))}
-                placeholder="Product SKU"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="edit-colors">Colors (comma-separated)</Label>
-              <Input
-                id="edit-colors"
-                value={colorsInput}
-                onChange={(e) => setColorsInput(e.target.value)}
-                placeholder="Red, Blue, Green"
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Separate colors with commas
-              </p>
-            </div>
-            <div>
-              <Label htmlFor="edit-stock">Stock</Label>
-              <Input
-                id="edit-stock"
-                type="number"
-                min="0"
-                value={String(editDraft.stock ?? 0)}
-                onChange={(e) => setEditDraft((d) => ({ ...d, stock: Number(e.target.value) || 0 }))}
-                placeholder="0"
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <Label htmlFor="edit-backup">Backup Product (optional)</Label>
-              <select
-                id="edit-backup"
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                value={editDraft.backupProductId ?? ""}
-                onChange={(e) =>
-                  setEditDraft((d) => ({
-                    ...d,
-                    backupProductId: e.target.value ? e.target.value : null,
-                  }))
-                }
-              >
-                <option value="">— None —</option>
-                {products
-                  .filter((pp) => pp.id !== product?.id)
-                  .map((bp) => (
-                    <option key={bp.id} value={bp.id}>
-                      {bp.name} ({bp.sku})
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            <div>
-              <Label>Active Status</Label>
-              <div className="flex items-center gap-2 mt-2">
-                <input
-                  id="edit-isActive"
-                  type="checkbox"
-                  className="h-4 w-4"
-                  checked={Boolean(editDraft.isActive)}
-                  onChange={(e) => setEditDraft((d) => ({ ...d, isActive: e.target.checked }))}
-                />
-                <Label htmlFor="edit-isActive" className="text-sm">Product is active</Label>
-              </div>
-            </div>
-
-            <div className="md:col-span-2">
-              <Label htmlFor="edit-packages">Packages Include (one per line)</Label>
-              <Textarea
-                id="edit-packages"
-                value={packagesInput}
-                onChange={(e) => setPackagesInput(e.target.value)}
-                placeholder="Item 1&#10;Item 2&#10;Item 3"
-                rows={3}
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Enter one item per line
-              </p>
-            </div>
-
-            <div className="md:col-span-2">
-              <Label htmlFor="edit-specifications">Specifications (key:value, one per line)</Label>
-              <Textarea
-                id="edit-specifications"
-                value={specificationsInput}
-                onChange={(e) => setSpecificationsInput(e.target.value)}
-                placeholder="Weight: 2kg&#10;Dimensions: 10x20x5cm&#10;Material: Plastic"
-                rows={4}
-              />
-              <div className="text-xs text-muted-foreground mt-1 space-y-1">
-                <p>Format: <strong>Key: Value</strong> (one specification per line)</p>
-                <p>Example: <code>Weight: 2kg</code></p>
-                <p>Current specifications count: <strong>{Object.keys(parseSpecifications(specificationsInput)).length}</strong></p>
-              </div>
-              
-              {/* Debug component */}
-              <SpecificationsDebug input={specificationsInput} />
-            </div>
-
-            <div className="md:col-span-2">
-              <Label>Images</Label>
-              <div className="flex items-center gap-3">
-                <Input
-                  type="file"
-                  multiple
-                  accept="image/*"
-                  onChange={async (e) => {
-                    const files = Array.from(e.target.files ?? []);
-                    if (!files.length) return;
-                    try {
-                      const urls = await uploadFiles(files);
-                      setEditImages((prev) => [...prev, ...urls]);
-                      toast({ title: "Images uploaded", description: `${urls.length} new file(s).` });
-                    } catch (err: any) {
-                      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
-                    }
-                  }}
-                />
-                <ImageIcon className="h-4 w-4 opacity-60" />
-              </div>
-              {!!editImages.length && (
-                <div className="mt-3 flex flex-wrap gap-3">
-                  {editImages.map((u, idx) => (
-                    <div key={`${u}-${idx}`} className="relative">
-                      <div className="w-20 h-20 rounded border overflow-hidden bg-muted">
-                        <img src={u} alt="img" className="object-cover w-full h-full" />
-                      </div>
-                      <div className="flex justify-center gap-1 mt-1">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          disabled={idx === 0}
-                          onClick={() => setEditImages((prev) => move(prev, idx, idx - 1))}
-                          title="Move left"
-                        >
-                          <ArrowLeft className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          disabled={idx === editImages.length - 1}
-                          onClick={() => setEditImages((prev) => move(prev, idx, idx + 1))}
-                          title="Move right"
-                        >
-                          <ArrowRight className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="icon"
-                          onClick={() => setEditImages((prev) => removeAt(prev, idx))}
-                          title="Remove"
-                        >
-                          <Trash className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <div className="text-center text-[10px] text-muted-foreground mt-1">#{idx}</div>
+            
+            <p className="text-3xl font-bold text-blue-600 mb-6" data-testid="text-product-detail-points-required">
+              {pointsRequired} points
+            </p>
+            
+            {/* Specifications Section */}
+            {product.specifications && Object.keys(product.specifications).length > 0 && (
+              <div className="mb-6">
+                <h4 className="font-semibold text-lg mb-3">Specifications:</h4>
+                <div className="grid grid-cols-1 gap-3 text-sm bg-white rounded-lg p-4 shadow-sm">
+                  {Object.entries(product.specifications).map(([key, value]) => (
+                    <div key={key} className="flex justify-between border-b pb-2 last:border-b-0">
+                      <span className="text-muted-foreground font-medium">{key}:</span>
+                      <span className="font-medium text-right">{String(value)}</span>
                     </div>
                   ))}
                 </div>
-              )}
+              </div>
+            )}
+            
+            {/* Packages Include Section */}
+            {Array.isArray(product.packagesInclude) && product.packagesInclude.length > 0 && (
+              <div className="mb-6">
+                <h4 className="font-semibold text-lg mb-3">Packages Include:</h4>
+                <div className="space-y-2 text-sm bg-white rounded-lg p-4 shadow-sm">
+                  {product.packagesInclude.map((item: string, index: number) => (
+                    <div key={index} className="flex items-start">
+                      <CheckCircle className="text-green-600 mr-3 h-5 w-5 mt-0.5 flex-shrink-0" />
+                      <span className="text-muted-foreground">{item}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Color Selection */}
+            {hasColors ? (
+              <div className="mb-6">
+                <h4 className="font-semibold text-lg mb-3">Choose Color:</h4>
+                <div className="flex flex-wrap gap-3">
+                  {product.colors.map((color: string) => {
+                    const selected = selectedColor === color;
+                    return (
+                      <button
+                        key={color}
+                        type="button"
+                        className={`w-12 h-12 rounded-full border-2 transition-all duration-200 ${
+                          selected ? "ring-2 ring-blue-500 ring-offset-2" : "border-gray-300 hover:border-blue-400"
+                        } ${getColorStyle(color)}`}
+                        style={getColorInlineStyle(color)}
+                        onClick={() => {
+                          if (!selected) {
+                            console.log("Color selected:", color);
+                            onColorChange(color);
+                          }
+                        }}
+                        aria-pressed={selected}
+                        aria-label={`Select color ${color}`}
+                        data-testid={`detail-color-option-${color}`}
+                        title={color}
+                      />
+                    );
+                  })}
+                </div>
+                {selectedColor && (
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Selected: <span className="font-medium">{selectedColor}</span>
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="mb-6">
+                <h4 className="font-semibold text-lg mb-3">Color:</h4>
+                <p className="text-sm text-muted-foreground">No color options available</p>
+              </div>
+            )}
+            
+            {/* Quantity Selection */}
+            <div className="mb-8">
+              <h4 className="font-semibold text-lg mb-3">Quantity:</h4>
+              <div className="flex items-center space-x-3">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => onQuantityChange(Math.max(1, quantity - 1))}
+                  disabled={quantity <= 1}
+                  className="rounded-full w-10 h-10"
+                >
+                  <Minus className="h-4 w-4" />
+                </Button>
+                <Input
+                  type="number"
+                  className="w-20 text-center text-lg font-semibold"
+                  value={quantity}
+                  onChange={(e) => onQuantityChange(parseInt(e.target.value) || 1)}
+                  min={1}
+                  max={product.stock}
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => onQuantityChange(Math.min(product.stock, quantity + 1))}
+                  disabled={quantity >= product.stock}
+                  className="rounded-full w-10 h-10"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+                <span className="text-sm text-muted-foreground ml-2">
+                  {product.stock} available
+                </span>
+              </div>
+            </div>
+            
+            {/* Add to Cart Button */}
+            <div className="mt-auto">
+              <Button
+                className="w-full py-4 text-lg font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+                onClick={handleAddToCart}
+                data-testid="button-add-to-cart-from-detail"
+                disabled={hasColors && !selectedColor}
+                size="lg"
+              >
+                <ShoppingCart className="mr-3 h-6 w-6" />
+                Add to Cart
+              </Button>
             </div>
           </div>
-        </div>
-
-        <div className="mt-6 flex justify-end gap-2 flex-shrink-0">
-          <Button variant="secondary" onClick={onClose}>
-            <X className="h-4 w-4 mr-1" />
-            Cancel
-          </Button>
-          <Button onClick={handleSave} disabled={updateProductMutation.isPending}>
-            <Save className="h-4 w-4 mr-1" />
-            {updateProductMutation.isPending ? "Saving..." : "Save Changes"}
-          </Button>
         </div>
       </DialogContent>
     </Dialog>
   );
-} 
+}
+
+export const ProductDetailModal = memo(_ProductDetailModal);
