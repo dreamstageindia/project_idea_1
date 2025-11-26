@@ -111,6 +111,11 @@ function _ProductDetailModal({
   const hasColors = Array.isArray(product.colors) && product.colors.length > 0;
   console.log("Has colors:", hasColors, "Colors array:", product.colors);
 
+  // Check if specifications exist and are not empty
+  const hasSpecifications = product.specifications && 
+    typeof product.specifications === 'string' && 
+    product.specifications.trim().length > 0;
+
   return (
     <Dialog
       open={isOpen}
@@ -161,17 +166,14 @@ function _ProductDetailModal({
               {pointsRequired} points
             </p>
             
-            {/* Specifications Section */}
-            {product.specifications && Object.keys(product.specifications).length > 0 && (
+            {/* Specifications Section - Updated for plain text */}
+            {hasSpecifications && (
               <div className="mb-6">
                 <h4 className="font-semibold text-lg mb-3">Specifications:</h4>
-                <div className="grid grid-cols-1 gap-3 text-sm bg-white rounded-lg p-4 shadow-sm">
-                  {Object.entries(product.specifications).map(([key, value]) => (
-                    <div key={key} className="flex justify-between border-b pb-2 last:border-b-0">
-                      <span className="text-muted-foreground font-medium">{key}:</span>
-                      <span className="font-medium text-right">{String(value)}</span>
-                    </div>
-                  ))}
+                <div className="bg-white rounded-lg p-4 shadow-sm">
+                  <div className="whitespace-pre-wrap text-sm text-muted-foreground leading-relaxed">
+                    {product.specifications}
+                  </div>
                 </div>
               </div>
             )}
