@@ -42,8 +42,16 @@ function _ProductDetailModal({
 
   useEffect(() => {
     if (!isOpen || !product) return;
+    
+    // Debug log to check what colors are available
+    console.log("Product colors in modal:", product.colors);
+    console.log("Product data in modal:", product);
+    
     const first = product.colors?.[0] || "";
-    if (first && selectedColor !== first) onColorChange(first);
+    if (first && selectedColor !== first) {
+      console.log("Setting initial color to:", first);
+      onColorChange(first);
+    }
   }, [isOpen, product?.id, product?.colors, selectedColor, onColorChange]);
 
   const getColorStyle = (color: string) => {
@@ -54,13 +62,22 @@ function _ProductDetailModal({
       black: "bg-black",
       white: "bg-white border-2 border-gray-300",
       blue: "bg-blue-600",
+      red: "bg-red-600",
+      green: "bg-green-600",
+      yellow: "bg-yellow-400",
+      purple: "bg-purple-600",
+      pink: "bg-pink-500",
+      orange: "bg-orange-500",
+      brown: "bg-amber-900",
+      gray: "bg-gray-500",
       charcoal: "bg-gray-800",
       navy: "bg-blue-900",
       "space-gray": "bg-gray-600",
       silver: "bg-gray-300",
+      gold: "bg-yellow-300",
       "rose-gold": "bg-gradient-to-br from-rose-300 to-amber-200",
     };
-    return colorMap[color] || "bg-gray-400";
+    return colorMap[color.toLowerCase()] || "bg-gray-400";
   };
 
   const getColorInlineStyle = (color: string) => {
@@ -89,6 +106,10 @@ function _ProductDetailModal({
     }
     onAddToCart(product, selectedColor || null, quantity);
   };
+
+  // Check if product has colors and log for debugging
+  const hasColors = Array.isArray(product.colors) && product.colors.length > 0;
+  console.log("Has colors:", hasColors, "Colors array:", product.colors);
 
   return (
     <Dialog
@@ -171,7 +192,7 @@ function _ProductDetailModal({
             )}
             
             {/* Color Selection */}
-            {Array.isArray(product.colors) && product.colors.length > 0 && (
+            {hasColors ? (
               <div className="mb-6">
                 <h4 className="font-semibold text-lg mb-3">Choose Color:</h4>
                 <div className="flex flex-wrap gap-3">
@@ -186,7 +207,10 @@ function _ProductDetailModal({
                         } ${getColorStyle(color)}`}
                         style={getColorInlineStyle(color)}
                         onClick={() => {
-                          if (!selected) onColorChange(color);
+                          if (!selected) {
+                            console.log("Color selected:", color);
+                            onColorChange(color);
+                          }
                         }}
                         aria-pressed={selected}
                         aria-label={`Select color ${color}`}
@@ -196,6 +220,16 @@ function _ProductDetailModal({
                     );
                   })}
                 </div>
+                {selectedColor && (
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Selected: <span className="font-medium">{selectedColor}</span>
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="mb-6">
+                <h4 className="font-semibold text-lg mb-3">Color:</h4>
+                <p className="text-sm text-muted-foreground">No color options available</p>
               </div>
             )}
             
@@ -241,7 +275,7 @@ function _ProductDetailModal({
                 className="w-full py-4 text-lg font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
                 onClick={handleAddToCart}
                 data-testid="button-add-to-cart-from-detail"
-                disabled={product.colors?.length > 0 && !selectedColor}
+                disabled={hasColors && !selectedColor}
                 size="lg"
               >
                 <ShoppingCart className="mr-3 h-6 w-6" />
