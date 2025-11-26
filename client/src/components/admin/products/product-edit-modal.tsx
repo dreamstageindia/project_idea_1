@@ -56,21 +56,31 @@ export function ProductEditModal({ open, onClose, product, products, categories 
 
   const updateProductMutation = useMutation({
     mutationFn: async (payload: { id: string; updates: Partial<Product> }) => {
-      console.log("Updating product with data:", payload.updates);
+      console.log("Sending update request with data:", payload.updates);
       console.log("Specifications being sent:", payload.updates.specifications);
+      
       const res = await apiRequest("PUT", `/api/admin/products/${payload.id}`, payload.updates);
-      return res.json();
+      const result = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(result.message || "Failed to update product");
+      }
+      
+      return result;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/products-admin"] });
       toast({ title: "Product updated successfully" });
       onClose();
     },
-    onError: (e: any) => toast({ 
-      title: "Update failed", 
-      description: e.message, 
-      variant: "destructive" 
-    }),
+    onError: (e: any) => {
+      console.error("Update error:", e);
+      toast({ 
+        title: "Update failed", 
+        description: e.message, 
+        variant: "destructive" 
+      });
+    },
   });
 
   // Parse specifications from text input to object
@@ -95,6 +105,17 @@ export function ProductEditModal({ open, onClose, product, products, categories 
   const handleSave = () => {
     if (!product) return;
     
+    // Parse the current inputs
+    const parsedColors = colorsInput.split(",").map(s => s.trim()).filter(Boolean);
+    const parsedPackages = packagesInput.split("\n").map(s => s.trim()).filter(Boolean);
+    const parsedSpecifications = parseSpecifications(specificationsInput);
+    
+    console.log("Parsed data:", {
+      colors: parsedColors,
+      packages: parsedPackages,
+      specifications: parsedSpecifications
+    });
+    
     // Build the complete update data
     const updates: Partial<Product> = {
       name: editDraft.name || "",
@@ -105,12 +126,12 @@ export function ProductEditModal({ open, onClose, product, products, categories 
       backupProductId: editDraft.backupProductId || null,
       isActive: editDraft.isActive !== false,
       images: editImages,
-      colors: colorsInput.split(",").map(s => s.trim()).filter(Boolean),
-      packagesInclude: packagesInput.split("\n").map(s => s.trim()).filter(Boolean),
-      specifications: parseSpecifications(specificationsInput),
+      colors: parsedColors,
+      packagesInclude: parsedPackages,
+      specifications: parsedSpecifications,
     };
 
-    console.log("Final update data:", updates);
+    console.log("Final update payload:", updates);
     
     updateProductMutation.mutate({ id: product.id, updates });
   };
