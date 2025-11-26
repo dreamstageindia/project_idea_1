@@ -145,18 +145,19 @@ export const insertEmployeeSchema = createInsertSchema(employees).pick({
   points: true,
 });
 
-export const insertProductSchema = createInsertSchema(products).pick({
-  name: true,
-  price: true,
-  images: true,
-  colors: true,
-  stock: true,
-  packagesInclude: true,
-  specifications: true,
-  sku: true,
-  backupProductId: true,
-  categoryId: true,
-  isActive: true,
+// Fixed product schema with proper JSON handling
+export const insertProductSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  price: z.string().refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) >= 0, "Valid price is required"),
+  images: z.array(z.string()).default([]),
+  colors: z.array(z.string()).default([]),
+  stock: z.number().int().min(0).default(0),
+  packagesInclude: z.array(z.string()).default([]),
+  specifications: z.record(z.string(), z.string()).default({}),
+  sku: z.string().min(1, "SKU is required"),
+  isActive: z.boolean().default(true),
+  backupProductId: z.string().nullable().default(null),
+  categoryId: z.string().nullable().default(null),
 });
 
 export const insertOrderSchema = createInsertSchema(orders).pick({
