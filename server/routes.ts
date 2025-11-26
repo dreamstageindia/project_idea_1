@@ -814,33 +814,16 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // In your registerRoutes.ts, update the PUT /api/admin/products/:id route:
-app.put("/api/admin/products/:id", async (req, res) => {
-  try {
-    console.log("Received update data:", req.body);
-    console.log("Specifications received:", req.body.specifications);
-    
-    // Validate the update data using the insertProductSchema (but make all fields optional for updates)
-    const updates = req.body;
-    
-    // Create a partial schema for updates (all fields optional)
-    const updateProductSchema = insertProductSchema.partial();
-    
-    // Validate the updates
-    const validatedUpdates = updateProductSchema.parse(updates);
-    
-    console.log("Validated updates:", validatedUpdates);
-    
-    const product = await storage.updateProduct(req.params.id, validatedUpdates);
-    if (!product) return res.status(404).json({ message: "Product not found" });
-    
-    console.log("Updated product:", product);
-    res.json(product);
-  } catch (error: any) {
-    console.error("Error updating product:", error);
-    res.status(500).json({ message: "Error updating product", error: error.message });
-  }
-});
+  app.put("/api/admin/products/:id", async (req, res) => {
+    try {
+      const updates = req.body;
+      const product = await storage.updateProduct(req.params.id, updates);
+      if (!product) return res.status(404).json({ message: "Product not found" });
+      res.json(product);
+    } catch {
+      res.status(500).json({ message: "Error updating product" });
+    }
+  });
 
   app.delete("/api/admin/products/:id", async (req, res) => {
     try {
