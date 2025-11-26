@@ -4,7 +4,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ProductCarousel } from "./product-carousel";
-import { X, ShoppingCart, CheckCircle, Plus, Minus } from "lucide-react"; // Added Plus, Minus imports
+import { X, ShoppingCart, CheckCircle, Plus, Minus } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
@@ -97,15 +97,16 @@ function _ProductDetailModal({
         if (!open) onClose();
       }}
     >
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0" data-testid="modal-product-detail" style={{ zIndex: 1002 }}>
-        <div className="grid md:grid-cols-2 gap-0">
-          <div className="p-6">
-            <div className="h-80 bg-gray-100 rounded-lg mb-4">
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto p-0" data-testid="modal-product-detail" style={{ zIndex: 1002 }}>
+        <div className="grid md:grid-cols-2 gap-0 min-h-[600px]">
+          {/* Image Section - Fixed layout */}
+          <div className="flex flex-col p-6 bg-white">
+            <div className="flex-1 flex items-center justify-center min-h-[400px] bg-gray-50 rounded-lg mb-4">
               <ProductCarousel images={product.images || []} alt={product.name} />
             </div>
-            <div className="flex space-x-2 overflow-x-auto">
+            <div className="flex space-x-2 overflow-x-auto pt-4">
               {(product.images || []).map((image: string, index: number) => (
-                <div key={index} className="flex-shrink-0 w-20 h-20 bg-gray-100 rounded-lg overflow-hidden">
+                <div key={index} className="flex-shrink-0 w-20 h-20 bg-gray-100 rounded-lg overflow-hidden border-2 border-transparent hover:border-blue-500 transition-colors">
                   <img
                     src={image}
                     alt={`${product.name} thumbnail ${index + 1}`}
@@ -116,9 +117,11 @@ function _ProductDetailModal({
               ))}
             </div>
           </div>
-          <div className="p-6 bg-muted/30">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold" data-testid="text-product-detail-name">
+          
+          {/* Details Section */}
+          <div className="p-8 bg-muted/30 flex flex-col">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-3xl font-bold" data-testid="text-product-detail-name">
                 {product.name}
               </h2>
               <Button
@@ -127,52 +130,60 @@ function _ProductDetailModal({
                 onClick={onClose}
                 data-testid="button-close-product-detail"
                 aria-label="Close"
+                className="hover:bg-gray-100 rounded-full"
               >
                 <X className="h-6 w-6" />
               </Button>
             </div>
-            <p className="text-2xl font-bold mb-4" data-testid="text-product-detail-points-required">
+            
+            <p className="text-3xl font-bold text-blue-600 mb-6" data-testid="text-product-detail-points-required">
               {pointsRequired} points
             </p>
-            {Array.isArray(product.packagesInclude) && product.packagesInclude.length > 0 && (
-              <div className="space-y-2 mb-6">
-                <h4 className="font-semibold">Packages Include:</h4>
-                <ul className="space-y-1 text-sm text-muted-foreground">
-                  {product.packagesInclude.map((item: string, index: number) => (
-                    <li key={index} className="flex items-start">
-                      <CheckCircle className="text-green-600 mr-2 h-4 w-4 mt-0.5 flex-shrink-0" />
-                      {item}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            
+            {/* Specifications Section */}
             {product.specifications && Object.keys(product.specifications).length > 0 && (
               <div className="mb-6">
-                <h4 className="font-semibold mb-2">Specifications:</h4>
-                <div className="grid grid-cols-2 gap-4 text-sm">
+                <h4 className="font-semibold text-lg mb-3">Specifications:</h4>
+                <div className="grid grid-cols-1 gap-3 text-sm bg-white rounded-lg p-4 shadow-sm">
                   {Object.entries(product.specifications).map(([key, value]) => (
-                    <div key={key}>
-                      <p className="text-muted-foreground">{key}</p>
-                      <p className="font-medium">{String(value)}</p>
+                    <div key={key} className="flex justify-between border-b pb-2 last:border-b-0">
+                      <span className="text-muted-foreground font-medium">{key}:</span>
+                      <span className="font-medium text-right">{String(value)}</span>
                     </div>
                   ))}
                 </div>
               </div>
             )}
+            
+            {/* Packages Include Section */}
+            {Array.isArray(product.packagesInclude) && product.packagesInclude.length > 0 && (
+              <div className="mb-6">
+                <h4 className="font-semibold text-lg mb-3">Packages Include:</h4>
+                <div className="space-y-2 text-sm bg-white rounded-lg p-4 shadow-sm">
+                  {product.packagesInclude.map((item: string, index: number) => (
+                    <div key={index} className="flex items-start">
+                      <CheckCircle className="text-green-600 mr-3 h-5 w-5 mt-0.5 flex-shrink-0" />
+                      <span className="text-muted-foreground">{item}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Color Selection */}
             {Array.isArray(product.colors) && product.colors.length > 0 && (
               <div className="mb-6">
-                <h4 className="font-semibold mb-3">Choose Color:</h4>
-                <div className="flex space-x-3">
+                <h4 className="font-semibold text-lg mb-3">Choose Color:</h4>
+                <div className="flex flex-wrap gap-3">
                   {product.colors.map((color: string) => {
                     const selected = selectedColor === color;
                     return (
                       <button
                         key={color}
                         type="button"
-                        className={`color-option ${getColorStyle(color)} ${
-                          selected ? "selected ring-2 ring-primary" : ""
-                        }`}
+                        className={`w-12 h-12 rounded-full border-2 transition-all duration-200 ${
+                          selected ? "ring-2 ring-blue-500 ring-offset-2" : "border-gray-300 hover:border-blue-400"
+                        } ${getColorStyle(color)}`}
                         style={getColorInlineStyle(color)}
                         onClick={() => {
                           if (!selected) onColorChange(color);
@@ -180,26 +191,30 @@ function _ProductDetailModal({
                         aria-pressed={selected}
                         aria-label={`Select color ${color}`}
                         data-testid={`detail-color-option-${color}`}
+                        title={color}
                       />
                     );
                   })}
                 </div>
               </div>
             )}
-            <div className="mb-6">
-              <h4 className="font-semibold mb-3">Quantity:</h4>
-              <div className="flex items-center space-x-2">
+            
+            {/* Quantity Selection */}
+            <div className="mb-8">
+              <h4 className="font-semibold text-lg mb-3">Quantity:</h4>
+              <div className="flex items-center space-x-3">
                 <Button
                   variant="outline"
                   size="icon"
                   onClick={() => onQuantityChange(Math.max(1, quantity - 1))}
                   disabled={quantity <= 1}
+                  className="rounded-full w-10 h-10"
                 >
                   <Minus className="h-4 w-4" />
                 </Button>
                 <Input
                   type="number"
-                  className="w-16 text-center"
+                  className="w-20 text-center text-lg font-semibold"
                   value={quantity}
                   onChange={(e) => onQuantityChange(parseInt(e.target.value) || 1)}
                   min={1}
@@ -210,20 +225,29 @@ function _ProductDetailModal({
                   size="icon"
                   onClick={() => onQuantityChange(Math.min(product.stock, quantity + 1))}
                   disabled={quantity >= product.stock}
+                  className="rounded-full w-10 h-10"
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
+                <span className="text-sm text-muted-foreground ml-2">
+                  {product.stock} available
+                </span>
               </div>
             </div>
-            <Button
-              className="w-full py-4 text-lg font-semibold"
-              onClick={handleAddToCart}
-              data-testid="button-add-to-cart-from-detail"
-              disabled={product.colors?.length > 0 && !selectedColor}
-            >
-              <ShoppingCart className="mr-2 h-5 w-5" />
-              Add to Cart
-            </Button>
+            
+            {/* Add to Cart Button */}
+            <div className="mt-auto">
+              <Button
+                className="w-full py-4 text-lg font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+                onClick={handleAddToCart}
+                data-testid="button-add-to-cart-from-detail"
+                disabled={product.colors?.length > 0 && !selectedColor}
+                size="lg"
+              >
+                <ShoppingCart className="mr-3 h-6 w-6" />
+                Add to Cart
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>
