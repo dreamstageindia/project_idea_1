@@ -1,5 +1,5 @@
 // src/components/product/product-detail-modal.tsx
-import { memo, useEffect } from "react";
+import { memo, useEffect, useMemo } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,19 +40,52 @@ function _ProductDetailModal({
   const inrPerPoint = parseFloat(branding?.inrPerPoint || "1");
   const pointsRequired = Math.ceil(parseFloat(product.price) / inrPerPoint);
 
+  // Helper function to normalize specifications data
+  const normalizeSpecifications = useMemo(() => {
+    if (!product.specifications) return null;
+
+    console.log("Raw specifications:", product.specifications);
+    console.log("Type of specifications:", typeof product.specifications);
+
+    // Case 1: Already a string
+    if (typeof product.specifications === 'string') {
+      return product.specifications.trim();
+    }
+
+    // Case 2: Array of characters (like your issue)
+    if (Array.isArray(product.specifications)) {
+      console.log("Specifications is an array, joining characters:", product.specifications);
+      return product.specifications.join('').trim();
+    }
+
+    // Case 3: Object (legacy format) - convert to string
+    if (typeof product.specifications === 'object' && product.specifications !== null) {
+      console.log("Specifications is an object, converting to string:", product.specifications);
+      return Object.entries(product.specifications)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join('\n')
+        .trim();
+    }
+
+    return null;
+  }, [product.specifications]);
+
+  const hasSpecifications = normalizeSpecifications && normalizeSpecifications.length > 0;
+
   useEffect(() => {
     if (!isOpen || !product) return;
     
     // Debug log to check what colors are available
     console.log("Product colors in modal:", product.colors);
     console.log("Product data in modal:", product);
+    console.log("Normalized specifications:", normalizeSpecifications);
     
     const first = product.colors?.[0] || "";
     if (first && selectedColor !== first) {
       console.log("Setting initial color to:", first);
       onColorChange(first);
     }
-  }, [isOpen, product?.id, product?.colors, selectedColor, onColorChange]);
+  }, [isOpen, product?.id, product?.colors, selectedColor, onColorChange, normalizeSpecifications]);
 
   const getColorStyle = (color: string) => {
     if (color.match(/^#[0-9A-Fa-f]{6}$/)) {
@@ -111,11 +144,6 @@ function _ProductDetailModal({
   const hasColors = Array.isArray(product.colors) && product.colors.length > 0;
   console.log("Has colors:", hasColors, "Colors array:", product.colors);
 
-  // Check if specifications exist and are not empty
-  const hasSpecifications = product.specifications && 
-    typeof product.specifications === 'string' && 
-    product.specifications.trim().length > 0;
-
   return (
     <Dialog
       open={isOpen}
@@ -166,14 +194,16 @@ function _ProductDetailModal({
               {pointsRequired} points
             </p>
             
-            {/* Specifications Section - Updated for plain text */}
+            {/* Specifications Section - Handles multiple data formats */}
             {hasSpecifications && (
               <div className="mb-6">
                 <h4 className="font-semibold text-lg mb-3">Specifications:</h4>
                 <div className="bg-white rounded-lg p-4 shadow-sm">
                   <div className="whitespace-pre-wrap text-sm text-muted-foreground leading-relaxed">
-                    {product.specifications}
+                    {normalizeSpecifications}
                   </div>
+                  {/* Debug info - remove in production */}
+                  
                 </div>
               </div>
             )}
