@@ -56,12 +56,14 @@ export function ProductEditModal({ open, onClose, product, products, categories 
 
   const updateProductMutation = useMutation({
     mutationFn: async (payload: { id: string; updates: Partial<Product> }) => {
+      console.log("Updating product with data:", payload.updates);
+      console.log("Specifications being sent:", payload.updates.specifications);
       const res = await apiRequest("PUT", `/api/admin/products/${payload.id}`, payload.updates);
       return res.json();
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/products-admin"] });
-      toast({ title: "Product updated" });
+      toast({ title: "Product updated successfully" });
       onClose();
     },
     onError: (e: any) => toast({ 
@@ -93,13 +95,22 @@ export function ProductEditModal({ open, onClose, product, products, categories 
   const handleSave = () => {
     if (!product) return;
     
+    // Build the complete update data
     const updates: Partial<Product> = {
-      ...editDraft,
+      name: editDraft.name || "",
+      price: editDraft.price || "0.00",
+      sku: editDraft.sku || "",
+      stock: editDraft.stock || 0,
+      categoryId: editDraft.categoryId || null,
+      backupProductId: editDraft.backupProductId || null,
+      isActive: editDraft.isActive !== false,
       images: editImages,
       colors: colorsInput.split(",").map(s => s.trim()).filter(Boolean),
       packagesInclude: packagesInput.split("\n").map(s => s.trim()).filter(Boolean),
       specifications: parseSpecifications(specificationsInput),
     };
+
+    console.log("Final update data:", updates);
     
     updateProductMutation.mutate({ id: product.id, updates });
   };
