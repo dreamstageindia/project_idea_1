@@ -57,10 +57,11 @@ export function ProductsTable() {
     return p ? `${p.name} (${p.sku})` : "—";
   };
 
-  const getCategoryName = (categoryId: string | null | undefined) => {
-    if (!categoryId) return "—";
-    const category = categories.find((c) => c.id === categoryId);
-    return category ? category.name : "—";
+  const resolveProductCategories = (product: Product) => {
+    if (product.categories?.length) return product.categories;
+    const ids = product.categoryIds ?? [];
+    if (!ids.length) return [];
+    return categories.filter((category) => ids.includes(category.id));
   };
 
   return (
@@ -78,7 +79,7 @@ export function ProductsTable() {
                   <TableHead>SKU</TableHead>
                   <TableHead>Price</TableHead>
                   <TableHead>Stock</TableHead>
-                  <TableHead>Category</TableHead>
+                  <TableHead>Categories</TableHead>
                   <TableHead>Backup</TableHead>
                   <TableHead>Active</TableHead>
                   <TableHead className="w-[260px]">Actions</TableHead>
@@ -91,7 +92,21 @@ export function ProductsTable() {
                     <TableCell className="font-mono">{p.sku}</TableCell>
                     <TableCell>₹{p.price}</TableCell>
                     <TableCell>{p.stock}</TableCell>
-                    <TableCell>{getCategoryName(p.categoryId)}</TableCell>
+                    <TableCell>
+                      {(() => {
+                        const assigned = resolveProductCategories(p);
+                        if (!assigned.length) return "—";
+                        return (
+                          <div className="flex flex-wrap gap-1">
+                            {assigned.map((category) => (
+                              <Badge key={`${p.id}-${category.id}`} variant="outline">
+                                {category.name}
+                              </Badge>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </TableCell>
                     <TableCell>{labelForProduct(p.backupProductId)}</TableCell>
                     <TableCell>
                       <Badge variant={p.isActive ? "default" : "destructive"}>
