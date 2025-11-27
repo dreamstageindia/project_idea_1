@@ -124,7 +124,12 @@ class DrizzleStorage implements IStorage {
     return db
       .select()
       .from(products)
-      .where(and(eq(products.categoryId, categoryId), eq(products.isActive, true)))
+      .where(
+        and(
+          eq(products.isActive, true),
+          dsql`${categoryId} = ANY(${products.categoryIds})`
+        )
+      )
       .orderBy(desc(products.createdAt));
   }
 
