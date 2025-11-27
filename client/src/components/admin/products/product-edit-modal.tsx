@@ -75,7 +75,7 @@ export function ProductEditModal({ open, onClose, product, products, categories 
         sku: product.sku,
         isActive: product.isActive,
         backupProductId: product.backupProductId ?? null,
-        categoryId: product.categoryId ?? null,
+        categoryIds: product.categoryIds ?? [],
       });
       setEditImages(product.images ? product.images.slice() : []);
       setColorsInput((product.colors ?? []).join(", "));
@@ -89,6 +89,19 @@ export function ProductEditModal({ open, onClose, product, products, categories 
       setSpecificationsInput(specsText);
     }
   }, [product]);
+
+  const editCategoryIds = editDraft.categoryIds ?? [];
+
+  const toggleCategorySelection = (categoryId: string) => {
+    setEditDraft((draft) => {
+      const current = draft.categoryIds ?? [];
+      const exists = current.includes(categoryId);
+      return {
+        ...draft,
+        categoryIds: exists ? current.filter((id) => id !== categoryId) : [...current, categoryId],
+      };
+    });
+  };
 
   const updateProductMutation = useMutation({
     mutationFn: async (payload: { id: string; updates: Partial<Product> }) => {
@@ -172,7 +185,7 @@ export function ProductEditModal({ open, onClose, product, products, categories 
       price: editDraft.price || "0.00",
       sku: editDraft.sku.trim(),
       stock: editDraft.stock || 0,
-      categoryId: editDraft.categoryId || null,
+      categoryIds: editDraft.categoryIds ?? [],
       backupProductId: editDraft.backupProductId || null,
       isActive: editDraft.isActive !== false,
       images: editImages,
@@ -224,26 +237,36 @@ export function ProductEditModal({ open, onClose, product, products, categories 
               />
             </div>
 
-            <div>
-              <Label htmlFor="edit-category">Category</Label>
-              <select
-                id="edit-category"
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                value={editDraft.categoryId ?? ""}
-                onChange={(e) =>
-                  setEditDraft((d) => ({
-                    ...d,
-                    categoryId: e.target.value ? e.target.value : null,
-                  }))
-                }
-              >
-                <option value="">— No Category —</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
+            <div className="md:col-span-2">
+              <Label>Categories</Label>
+              {categories.length ? (
+                <div className="mt-2 grid sm:grid-cols-2 gap-2">
+                  {categories.map((category) => {
+                    const selected = editCategoryIds.includes(category.id);
+                    return (
+                      <label
+                        key={category.id}
+                        className="flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4"
+                          checked={selected}
+                          onChange={() => toggleCategorySelection(category.id)}
+                        />
+                        <span>{category.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground mt-2">No categories available.</p>
+              )}
+              {!!editCategoryIds.length && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Selected categories: {editCategoryIds.length}
+                </p>
+              )}
             </div>
             <div>
               <Label htmlFor="edit-sku">SKU *</Label>
