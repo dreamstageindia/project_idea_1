@@ -17,10 +17,10 @@ export function ProductsGrid() {
   // Group products by category
   const productsByCategory = categories.map(category => ({
     ...category,
-    products: products.filter(product => product.categoryId === category.id)
+    products: products.filter(product => (product.categoryIds ?? []).includes(category.id))
   }));
 
-  const uncategorizedProducts = products.filter(product => !product.categoryId);
+  const uncategorizedProducts = products.filter(product => (product.categoryIds?.length ?? 0) === 0);
 
   return (
     <div className="space-y-8">
