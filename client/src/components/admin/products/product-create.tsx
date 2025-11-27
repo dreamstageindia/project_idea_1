@@ -23,7 +23,7 @@ const defaultNewProduct: Partial<Product> = {
   sku: "",
   isActive: true,
   backupProductId: null,
-  categoryId: null,
+  categoryIds: [],
 };
 
 export function ProductCreate() {
@@ -84,6 +84,19 @@ export function ProductCreate() {
     return obj;
   };
 
+  const toggleCategorySelection = (categoryId: string) => {
+    setNewProduct((prev) => {
+      const current = prev.categoryIds ?? [];
+      const exists = current.includes(categoryId);
+      return {
+        ...prev,
+        categoryIds: exists ? current.filter((id) => id !== categoryId) : [...current, categoryId],
+      };
+    });
+  };
+
+  const selectedCategoryIds = newProduct.categoryIds ?? [];
+
   const handleCreate = () => {
     // Validate required fields
     if (!newProduct.name?.trim()) {
@@ -101,7 +114,7 @@ export function ProductCreate() {
       price: newProduct.price || "0.00",
       sku: newProduct.sku.trim(),
       stock: newProduct.stock || 0,
-      categoryId: newProduct.categoryId || null,
+      categoryIds: newProduct.categoryIds ?? [],
       backupProductId: newProduct.backupProductId || null,
       isActive: newProduct.isActive !== false,
       images: newProductImages,
@@ -147,27 +160,37 @@ export function ProductCreate() {
             />
           </div>
 
-          {/* Category */}
-          <div>
-            <Label htmlFor="product-category">Category</Label>
-            <select
-              id="product-category"
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              value={newProduct.categoryId ?? ""}
-              onChange={(e) =>
-                setNewProduct((p) => ({
-                  ...p,
-                  categoryId: e.target.value ? e.target.value : null,
-                }))
-              }
-            >
-              <option value="">— No Category —</option>
-              {categories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
+          {/* Categories */}
+          <div className="md:col-span-2">
+            <Label>Categories</Label>
+            {categories.length ? (
+              <div className="mt-2 grid sm:grid-cols-2 gap-2">
+                {categories.map((category) => {
+                  const selected = selectedCategoryIds.includes(category.id);
+                  return (
+                    <label
+                      key={category.id}
+                      className="flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={selected}
+                        onChange={() => toggleCategorySelection(category.id)}
+                      />
+                      <span>{category.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground mt-2">No categories available.</p>
+            )}
+            {!!selectedCategoryIds.length && (
+              <p className="text-xs text-muted-foreground mt-2">
+                Selected categories: {selectedCategoryIds.length}
+              </p>
+            )}
           </div>
 
           {/* SKU */}
