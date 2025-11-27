@@ -56,7 +56,7 @@ export const products = pgTable("products", {
   sku: text("sku").notNull().unique(),
   isActive: boolean("is_active").default(true),
   backupProductId: varchar("backup_product_id"),
-  categoryId: varchar("category_id").references(() => categories.id),
+  categoryIds: text("category_ids").array().notNull().default(sql`ARRAY[]::text[]`),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -157,7 +157,7 @@ export const insertProductSchema = z.object({
   sku: z.string().min(1, "SKU is required"),
   isActive: z.boolean().default(true),
   backupProductId: z.string().nullable().default(null),
-  categoryId: z.string().nullable().default(null),
+  categoryIds: z.array(z.string()).default([]),
 });
 
 export const insertOrderSchema = createInsertSchema(orders).pick({
