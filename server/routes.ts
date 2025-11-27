@@ -8,6 +8,8 @@ import {
   insertEmployeeSchema,
   insertCartItemSchema,
   insertCategorySchema, // Add this import
+  type Product,
+  type Category,
 } from "@shared/schema";
 import { storage } from "./storage";
 import { sendOTP, verifyOTP, lookupByEmail } from "./auth-otp";
@@ -45,6 +47,28 @@ function toPublicUrl(absPath: string) {
 function isValidEmail(email: string): boolean {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
+}
+
+type CategoryMap = Map<string, Category>;
+
+function buildCategoryMap(list: Category[]): CategoryMap {
+  return new Map(list.map((category) => [category.id, category]));
+}
+
+function attachCategoriesToProduct<T extends Product>(
+  product: T,
+  categoryMap: CategoryMap
+) {
+  const categories =
+    product.categoryIds
+      ?.map((id) => categoryMap.get(id))
+      .filter((cat): cat is Category => Boolean(cat)) ?? [];
+
+  return {
+    ...product,
+    categories,
+    category: categories[0] ?? null,
+  };
 }
 
 export async function registerRoutes(app: Express): Promise<void> {
@@ -100,7 +124,10 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const { id } = req.params;
       const products = await storage.getProductsByCategory(id);
-      res.json(products);
+      const categories = await storage.getAllCategories();
+      const categoryMap = buildCategoryMap(categories);
+      const enriched = products.map((product) => attachCategoriesToProduct(product, categoryMap));
+      res.json(enriched);
     } catch {
       res.status(500).json({ message: "Error fetching category products" });
     }
@@ -142,34 +169,29 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const all = await storage.getAllProducts();
       const categories = await storage.getAllCategories();
+      const categoryMap = buildCategoryMap(categories);
+      const enriched = all.map((product) => attachCategoriesToProduct(product, categoryMap));
       
-      const byId = new Map(all.map((p) => [p.id, p]));
+      const byId = new Map(enriched.map((p) => [p.id, p]));
       const backupCandidateIds = new Set(
-        all
+        enriched
           .map((p) => p.backupProductId)
           .filter((v): v is string => Boolean(v))
       );
-      const originals = all.filter((p) => !backupCandidateIds.has(p.id));
+      const originals = enriched.filter((p) => !backupCandidateIds.has(p.id));
       const visible: any[] = [];
       
       for (const orig of originals) {
         const origStock = Number(orig.stock || 0);
         if (origStock > 0) {
-          // Add category info to product
-          const category = categories.find(c => c.id === orig.categoryId);
-          visible.push({
-            ...orig,
-            category: category || null
-          });
+          visible.push(orig);
         } else if (origStock <= 0 && orig.backupProductId) {
           const backup = byId.get(orig.backupProductId);
           if (backup && Number(backup.stock || 0) > 0 && backup.isActive !== false) {
-            const category = categories.find(c => c.id === backup.categoryId);
             visible.push({
               ...backup,
               isBackup: true,
               originalProductId: orig.id,
-              category: category || null
             });
           }
         }
@@ -184,25 +206,21 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const products = await storage.getAllProducts();
       const categories = await storage.getAllCategories();
+      const categoryMap = buildCategoryMap(categories);
       const productsWithBackups: any[] = [];
       
       for (const product of products) {
-        // Add category info to product
-        const category = categories.find(c => c.id === product.categoryId);
-        productsWithBackups.push({
-          ...product,
-          category: category || null
-        });
+        const enrichedProduct = attachCategoriesToProduct(product, categoryMap);
+        productsWithBackups.push(enrichedProduct);
         
         if (product.stock === 0 && product.backupProductId) {
           const backupProduct = await storage.getProduct(product.backupProductId);
           if (backupProduct && (backupProduct.stock || 0) > 0) {
-            const backupCategory = categories.find(c => c.id === backupProduct.categoryId);
+            const enrichedBackup = attachCategoriesToProduct(backupProduct, categoryMap);
             productsWithBackups.push({
-              ...backupProduct,
+              ...enrichedBackup,
               isBackup: true,
               originalProductId: product.id,
-              category: backupCategory || null
             });
           }
         }
@@ -218,14 +236,11 @@ export async function registerRoutes(app: Express): Promise<void> {
       const product = await storage.getProduct(req.params.id);
       if (!product) return res.status(404).json({ message: "Product not found" });
       
-      // Add category info to single product
       const categories = await storage.getAllCategories();
-      const category = categories.find(c => c.id === product.categoryId);
+      const categoryMap = buildCategoryMap(categories);
+      const enrichedProduct = attachCategoriesToProduct(product, categoryMap);
       
-      res.json({
-        ...product,
-        category: category || null
-      });
+      res.json(enrichedProduct);
     } catch {
       res.status(500).json({ message: "Error fetching product" });
     }
@@ -239,17 +254,14 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (!session) return res.status(401).json({ message: "Invalid session" });
       const items = await storage.getCartItems(session.employeeId);
       const categories = await storage.getAllCategories();
+      const categoryMap = buildCategoryMap(categories);
       
       const detailedItems = await Promise.all(
         items.map(async (item) => {
           const product = await storage.getProduct(item.productId);
-          const category = categories.find(c => c.id === product?.categoryId);
           return {
             ...item,
-            product: product ? {
-              ...product,
-              category: category || null
-            } : null
+            product: product ? attachCategoriesToProduct(product, categoryMap) : null
           };
         })
       );
@@ -625,19 +637,16 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (!session) return res.status(401).json({ message: "Invalid session" });
       const orders = await storage.getOrdersByEmployeeId(session.employeeId);
       const categories = await storage.getAllCategories();
+      const categoryMap = buildCategoryMap(categories);
       
       const detailedOrders = await Promise.all(
         orders.map(async (order) => {
           const product = await storage.getProduct(order.productId);
-          const category = categories.find(c => c.id === product?.categoryId);
           const employee = await storage.getEmployee(order.employeeId);
           
           return {
             order,
-            product: product ? {
-              ...product,
-              category: category || null
-            } : null,
+            product: product ? attachCategoriesToProduct(product, categoryMap) : null,
             employee
           };
         })
@@ -781,19 +790,16 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const ords = await storage.getAllOrders();
       const categories = await storage.getAllCategories();
+      const categoryMap = buildCategoryMap(categories);
       
       const withDetails = await Promise.all(
         ords.map(async (o) => {
           const product = await storage.getProduct(o.productId);
-          const category = categories.find(c => c.id === product?.categoryId);
           const employee = await storage.getEmployee(o.employeeId);
           
           return {
             ...o,
-            product: product ? {
-              ...product,
-              category: category || null
-            } : null,
+            product: product ? attachCategoriesToProduct(product, categoryMap) : null,
             employee
           };
         })
