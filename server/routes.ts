@@ -1,4 +1,3 @@
-// server/Routes.ts
 import type { Express } from "express";
 import path from "node:path";
 import fs from "node:fs";
@@ -7,24 +6,20 @@ import {
   insertProductSchema,
   insertEmployeeSchema,
   insertCartItemSchema,
-  insertCategorySchema, // Add this import
+  insertCategorySchema,
+  insertDomainWhitelistSchema,
   type Product,
   type Category,
+  insertCampaignSchema,
+  insertCampaignProductSchema,
+  type Campaign,
+  insertBlogSchema,
+  type Blog,
 } from "@shared/schema";
 import { storage } from "./storage";
 import { sendOTP, verifyOTP, lookupByEmail } from "./auth-otp";
 import crypto from "crypto";
 import "dotenv/config";
-import {
-  insertCampaignSchema,
-  insertCampaignProductSchema,
-  type Campaign,
-} from "@shared/schema";
-
-import {
-  insertBlogSchema,
-  type Blog,
-} from "@shared/schema";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(UPLOAD_DIR)) {
@@ -84,22 +79,41 @@ function attachCategoriesToProduct<T extends Product>(
 export async function registerRoutes(app: Express): Promise<void> {
   app.use("/uploads", (await import("express")).default.static(UPLOAD_DIR));
 
+  // File upload
   app.post("/api/upload", upload.array("files", 10), (req, res) => {
     const files = (req.files as Express.Multer.File[]) || [];
     const urls = files.map((f) => toPublicUrl(f.path));
     res.json({ urls });
   });
 
+  // Auth routes
   app.post("/api/auth/send-otp", sendOTP);
   app.post("/api/auth/verify-otp", verifyOTP);
   app.get("/api/auth/lookup-by-email", lookupByEmail);
 
+  // Domain check endpoint
+  app.get("/api/auth/check-domain/:domain", async (req, res) => {
+    try {
+      const { domain } = req.params;
+      const domainRecord = await storage.getDomainWhitelistByDomain(domain.toLowerCase());
+      res.json({ 
+        isWhitelisted: !!domainRecord && domainRecord.isActive,
+        domain: domainRecord 
+      });
+    } catch (error: any) {
+      console.error("Domain check error:", error);
+      res.status(500).json({ message: "Error checking domain", details: error.message });
+    }
+  });
+
+  // Logout
   app.post("/api/auth/logout", async (req, res) => {
     const token = req.headers.authorization?.replace("Bearer ", "");
     if (token) await storage.deleteSession(token);
     res.json({ message: "Logged out successfully" });
   });
 
+  // Session check
   app.get("/api/auth/session", async (req, res) => {
     const token = req.headers.authorization?.replace("Bearer ", "");
     if (!token) return res.status(401).json({ message: "No token provided" });
@@ -118,6 +132,79 @@ export async function registerRoutes(app: Express): Promise<void> {
       },
       expiresAt: session.expiresAt,
     });
+  });
+
+  // Domain Whitelist Admin Routes
+  app.get("/api/admin/domain-whitelist", async (_req, res) => {
+    try {
+      const domains = await storage.getAllDomainWhitelists();
+      res.json(domains);
+    } catch (error: any) {
+      console.error("Domain whitelist fetch error:", error);
+      res.status(500).json({ message: "Error fetching domain whitelist", details: error.message });
+    }
+  });
+
+  app.get("/api/admin/domain-whitelist/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const domain = await storage.getDomainWhitelist(id);
+      if (!domain) return res.status(404).json({ message: "Domain not found" });
+      res.json(domain);
+    } catch (error: any) {
+      console.error("Domain fetch error:", error);
+      res.status(500).json({ message: "Error fetching domain", details: error.message });
+    }
+  });
+
+  app.post("/api/admin/domain-whitelist", async (req, res) => {
+    try {
+      const domainData = insertDomainWhitelistSchema.parse(req.body);
+      // Ensure domain doesn't start with @ and is lowercase
+      domainData.domain = domainData.domain.toLowerCase().replace(/^@/, '');
+      
+      // Check if domain already exists
+      const existing = await storage.getDomainWhitelistByDomain(domainData.domain);
+      if (existing) {
+        return res.status(409).json({ message: "Domain already exists" });
+      }
+      
+      const domain = await storage.createDomainWhitelist(domainData);
+      res.json(domain);
+    } catch (error: any) {
+      console.error("Domain creation error:", error);
+      res.status(400).json({ message: "Invalid domain data", details: error.message });
+    }
+  });
+
+  app.put("/api/admin/domain-whitelist/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const updates = insertDomainWhitelistSchema.partial().parse(req.body);
+      
+      if (updates.domain) {
+        updates.domain = updates.domain.toLowerCase().replace(/^@/, '');
+      }
+      
+      const domain = await storage.updateDomainWhitelist(id, updates);
+      if (!domain) return res.status(404).json({ message: "Domain not found" });
+      res.json(domain);
+    } catch (error: any) {
+      console.error("Domain update error:", error);
+      res.status(500).json({ message: "Error updating domain", details: error.message });
+    }
+  });
+
+  app.delete("/api/admin/domain-whitelist/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const ok = await storage.deleteDomainWhitelist(id);
+      if (!ok) return res.status(404).json({ message: "Domain not found" });
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("Domain delete error:", error);
+      res.status(500).json({ message: "Error deleting domain", details: error.message });
+    }
   });
 
   // Categories API
@@ -174,7 +261,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // Update products API to include categories
+  // Products API
   app.get("/api/products", async (_req, res) => {
     try {
       const all = await storage.getAllProducts();
@@ -256,6 +343,29 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // CSR Products
+  app.get("/api/csr-products", async (_req, res) => {
+    try {
+      const allProducts = await storage.getAllProducts();
+      const csrProducts = allProducts.filter(product => 
+        product.csrSupport === true && product.isActive === true
+      );
+      
+      const categories = await storage.getAllCategories();
+      const categoryMap = buildCategoryMap(categories);
+      
+      const enrichedProducts = csrProducts.map((product) => 
+        attachCategoriesToProduct(product, categoryMap)
+      );
+      
+      res.json(enrichedProducts);
+    } catch (error: any) {
+      console.error("CSR products fetch error:", error);
+      res.status(500).json({ message: "Error fetching CSR products", details: error.message });
+    }
+  });
+
+  // Cart API
   app.get("/api/cart", async (req, res) => {
     try {
       const token = req.headers.authorization?.replace("Bearer ", "");
@@ -292,13 +402,11 @@ export async function registerRoutes(app: Express): Promise<void> {
       const employee = await storage.getEmployee(session.employeeId);
       if (!employee) return res.status(404).json({ message: "Employee not found" });
 
-      // validate payload with zod, but force employeeId from session
       const data = insertCartItemSchema.parse({
         ...req.body,
         employeeId: employee.id,
       });
 
-      // product checks
       const product = await storage.getProduct(data.productId);
       if (!product) return res.status(404).json({ message: "Product not found" });
 
@@ -309,12 +417,10 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(400).json({ message: "Insufficient stock" });
       }
 
-      // find existing line via storage API (no direct db access)
       const currentItems = await storage.getCartItems(employee.id);
       const existing = currentItems.find(
         (it) =>
           it.productId === data.productId &&
-          // treat undefined and null the same for selectedColor matching
           (it.selectedColor ?? null) === (selectedColor ?? null)
       );
 
@@ -327,7 +433,6 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.json(updated);
       }
 
-      // create new line
       const item = await storage.createCartItem({
         employeeId: employee.id,
         productId: data.productId,
@@ -374,6 +479,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Orders API
   app.post("/api/orders", async (req, res) => {
     try {
       const token = req.headers.authorization?.replace("Bearer ", "");
@@ -434,6 +540,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // PhonePe Payment Routes
   app.post("/api/orders/create-copay-order", async (req, res) => {
     try {
       const token = req.headers.authorization?.replace("Bearer ", "");
@@ -487,7 +594,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         merchantId,
         merchantTransactionId,
         merchantUserId: employee.id,
-        amount: copayInr * 100, // in paise
+        amount: copayInr * 100,
         redirectUrl: "http://localhost:5000/cart",
         redirectMode: "REDIRECT",
         callbackUrl: "http://localhost:5000/api/orders/phonepe-callback",
@@ -667,22 +774,27 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Admin Stats
   app.get("/api/admin/stats", async (_req, res) => {
     try {
       const emps = await storage.getAllEmployees();
       const prods = await storage.getAllProducts();
       const ords = await storage.getAllOrders();
       const categories = await storage.getAllCategories();
+      const domains = await storage.getAllDomainWhitelists();
       
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const ordersToday = ords.filter((o) => o.orderDate && o.orderDate >= today);
       const lockedAccounts = emps.filter((e) => e.isLocked);
+      const activeDomains = domains.filter((d) => d.isActive);
       
       res.json({
         totalEmployees: emps.length,
         totalProducts: prods.length,
         totalCategories: categories.length,
+        totalDomains: domains.length,
+        activeDomains: activeDomains.length,
         ordersToday: ordersToday.length,
         lockedAccounts: lockedAccounts.length,
       });
@@ -692,6 +804,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Employees Admin
   app.get("/api/admin/employees", async (_req, res) => {
     try {
       const emps = await storage.getAllEmployees();
@@ -706,6 +819,15 @@ export async function registerRoutes(app: Express): Promise<void> {
       const body = insertEmployeeSchema.parse(req.body);
       const email = body.email.trim().toLowerCase();
       if (!isValidEmail(email)) return res.status(400).json({ message: "Invalid email" });
+      
+      // Check if domain is whitelisted
+      const domainCheck = await storage.checkDomainWhitelisted(email);
+      if (!domainCheck.isWhitelisted && domainCheck.domain?.canLoginWithoutEmployeeId === false) {
+        return res.status(403).json({ 
+          message: "Email domain not authorized or requires whitelisting" 
+        });
+      }
+      
       const exists = await storage.getEmployeeByEmail(email);
       if (exists) return res.status(409).json({ message: "Employee already exists (email)" });
       const employee = await storage.createEmployee({ ...body, email });
@@ -725,6 +847,13 @@ export async function registerRoutes(app: Express): Promise<void> {
         try {
           const rawEmail = r.email ? String(r.email).trim().toLowerCase() : "";
           if (!rawEmail || !isValidEmail(rawEmail)) {
+            skipped++;
+            continue;
+          }
+
+          // Check domain whitelist
+          const domainCheck = await storage.checkDomainWhitelisted(rawEmail);
+          if (!domainCheck.isWhitelisted && domainCheck.domain?.canLoginWithoutEmployeeId === false) {
             skipped++;
             continue;
           }
@@ -774,6 +903,15 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (updates.email !== undefined) {
         const email = updates.email.trim().toLowerCase();
         if (!isValidEmail(email)) return res.status(400).json({ message: "Invalid email" });
+        
+        // Check domain whitelist
+        const domainCheck = await storage.checkDomainWhitelisted(email);
+        if (!domainCheck.isWhitelisted && domainCheck.domain?.canLoginWithoutEmployeeId === false) {
+          return res.status(403).json({ 
+            message: "Email domain not authorized" 
+          });
+        }
+        
         updates.email = email;
       }
       const updated = await storage.updateEmployee(id, updates);
@@ -796,6 +934,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Orders Admin
   app.get("/api/admin/orders", async (_req, res) => {
     try {
       const ords = await storage.getAllOrders();
@@ -820,6 +959,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Products Admin
   app.post("/api/admin/products", async (req, res) => {
     try {
       const productData = insertProductSchema.parse(req.body);
@@ -851,6 +991,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Branding
   app.get("/api/admin/branding", async (_req, res) => {
     try {
       const b = await storage.getBranding();
@@ -869,19 +1010,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.get("/api/auth/lookup-by-email", async (req, res) => {
-    res.set("Cache-Control", "no-store");
-    try {
-      const email = String(req.query.email || "").trim().toLowerCase();
-      if (!email) return res.status(400).json({ message: "email required" });
-      const emp = await storage.getEmployeeByEmail(email);
-      if (!emp) return res.status(404).json({ message: "Not found" });
-      res.json({ firstName: emp.firstName, lastName: emp.lastName });
-    } catch {
-      res.status(500).json({ message: "Lookup failed" });
-    }
-  });
-
+  // Campaigns
   app.get("/api/campaigns", async (_req, res) => {
     try {
       const campaigns = await storage.getAllCampaigns();
@@ -907,7 +1036,6 @@ export async function registerRoutes(app: Express): Promise<void> {
       const { id } = req.params;
       const campaignProducts = await storage.getCampaignProducts(id);
       
-      // Enrich products with categories
       const categories = await storage.getAllCategories();
       const categoryMap = buildCategoryMap(categories);
       
@@ -926,11 +1054,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   
   app.post("/api/admin/campaigns", async (req, res) => {
     try {
-      // Parse with the schema that converts strings to Dates
       const campaignData = insertCampaignSchema.parse(req.body);
-      
-      // The schema transformation already converted strings to Date objects
-      // Drizzle can handle Date objects directly
       const campaign = await storage.createCampaign(campaignData);
       res.json(campaign);
     } catch (error: any) {
@@ -942,7 +1066,6 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.put("/api/admin/campaigns/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      // Use partial() to allow updating only some fields
       const updates = insertCampaignSchema.partial().parse(req.body);
       
       const campaign = await storage.updateCampaign(id, updates);
@@ -966,37 +1089,33 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
   
-  // Fix the add product to campaign route
-app.post("/api/admin/campaigns/:campaignId/products", async (req, res) => {
-  try {
-    const { campaignId } = req.params;
-    const { productId } = req.body; // Just get productId from body
-    
-    if (!productId) {
-      return res.status(400).json({ message: "Product ID is required" });
+  app.post("/api/admin/campaigns/:campaignId/products", async (req, res) => {
+    try {
+      const { campaignId } = req.params;
+      const { productId } = req.body;
+      
+      if (!productId) {
+        return res.status(400).json({ message: "Product ID is required" });
+      }
+      
+      const campaign = await storage.getCampaign(campaignId);
+      if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+      
+      const product = await storage.getProduct(productId);
+      if (!product) return res.status(404).json({ message: "Product not found" });
+      
+      const campaignProduct = await storage.addProductToCampaign(campaignId, productId);
+      res.json(campaignProduct);
+    } catch (error: any) {
+      console.error("Add product to campaign error:", error);
+      res.status(400).json({ message: "Error adding product to campaign", details: error.message });
     }
-    
-    // Verify campaign exists
-    const campaign = await storage.getCampaign(campaignId);
-    if (!campaign) return res.status(404).json({ message: "Campaign not found" });
-    
-    // Verify product exists
-    const product = await storage.getProduct(productId);
-    if (!product) return res.status(404).json({ message: "Product not found" });
-    
-    const campaignProduct = await storage.addProductToCampaign(campaignId, productId);
-    res.json(campaignProduct);
-  } catch (error: any) {
-    console.error("Add product to campaign error:", error);
-    res.status(400).json({ message: "Error adding product to campaign", details: error.message });
-  }
-});
+  });
   
   app.delete("/api/admin/campaigns/:campaignId/products/:productId", async (req, res) => {
     try {
       const { campaignId, productId } = req.params;
       
-      // Find the campaign product record
       const campaignProducts = await storage.getCampaignProducts(campaignId);
       const campaignProduct = campaignProducts.find(cp => cp.product.id === productId);
       
@@ -1025,149 +1144,119 @@ app.post("/api/admin/campaigns/:campaignId/products", async (req, res) => {
     }
   });
 
-  // Add this route
-app.get("/api/admin/product-campaigns", async (_req, res) => {
-  try {
-    const allProducts = await storage.getAllProducts();
-    const result: Record<string, Campaign[]> = {};
-    
-    // Get campaigns for each product
-    for (const product of allProducts) {
-      const campaigns = await storage.getProductCampaigns(product.id);
-      result[product.id] = campaigns;
+  app.get("/api/admin/product-campaigns", async (_req, res) => {
+    try {
+      const allProducts = await storage.getAllProducts();
+      const result: Record<string, Campaign[]> = {};
+      
+      for (const product of allProducts) {
+        const campaigns = await storage.getProductCampaigns(product.id);
+        result[product.id] = campaigns;
+      }
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error("Get product campaigns error:", error);
+      res.status(500).json({ message: "Error fetching product campaigns", details: error.message });
     }
-    
-    res.json(result);
-  } catch (error: any) {
-    console.error("Get product campaigns error:", error);
-    res.status(500).json({ message: "Error fetching product campaigns", details: error.message });
-  }
-});
+  });
 
-// Blogs API
-app.get("/api/blogs", async (_req, res) => {
-  try {
-    const blogs = await storage.getPublishedBlogs();
-    res.json(blogs);
-  } catch (error: any) {
-    console.error("Blogs fetch error:", error);
-    res.status(500).json({ message: "Error fetching blogs", details: error.message });
-  }
-});
-
-app.get("/api/blogs/:slug", async (req, res) => {
-  try {
-    const { slug } = req.params;
-    const blog = await storage.getBlogBySlug(slug);
-    if (!blog) return res.status(404).json({ message: "Blog not found" });
-    
-    // Increment views
-    if (blog.isPublished) {
-      await storage.incrementBlogViews(blog.id);
+  // Blogs API
+  app.get("/api/blogs", async (_req, res) => {
+    try {
+      const blogs = await storage.getPublishedBlogs();
+      res.json(blogs);
+    } catch (error: any) {
+      console.error("Blogs fetch error:", error);
+      res.status(500).json({ message: "Error fetching blogs", details: error.message });
     }
-    
-    res.json(blog);
-  } catch (error: any) {
-    console.error("Blog fetch error:", error);
-    res.status(500).json({ message: "Error fetching blog", details: error.message });
-  }
-});
+  });
 
-// Admin Blog Routes
-app.get("/api/admin/blogs", async (_req, res) => {
-  try {
-    const blogs = await storage.getAllBlogs();
-    res.json(blogs);
-  } catch (error: any) {
-    console.error("Admin blogs fetch error:", error);
-    res.status(500).json({ message: "Error fetching blogs", details: error.message });
-  }
-});
-
-app.get("/api/admin/blogs/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const blog = await storage.getBlog(id);
-    if (!blog) return res.status(404).json({ message: "Blog not found" });
-    res.json(blog);
-  } catch (error: any) {
-    console.error("Admin blog fetch error:", error);
-    res.status(500).json({ message: "Error fetching blog", details: error.message });
-  }
-});
-
-app.post("/api/admin/blogs", async (req, res) => {
-  try {
-    const blogData = insertBlogSchema.parse(req.body);
-    
-    // Set publishedAt if publishing
-    const dataForDb = {
-      ...blogData,
-      publishedAt: blogData.isPublished ? new Date() : null,
-    };
-    
-    const blog = await storage.createBlog(dataForDb);
-    res.json(blog);
-  } catch (error: any) {
-    console.error("Blog creation error:", error);
-    res.status(400).json({ message: "Invalid blog data", details: error.message });
-  }
-});
-
-app.put("/api/admin/blogs/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const updates = insertBlogSchema.partial().parse(req.body);
-    
-    // Update publishedAt if publishing
-    const updatesForDb: any = { ...updates };
-    if (updates.isPublished !== undefined) {
-      updatesForDb.publishedAt = updates.isPublished ? new Date() : null;
+  app.get("/api/blogs/:slug", async (req, res) => {
+    try {
+      const { slug } = req.params;
+      const blog = await storage.getBlogBySlug(slug);
+      if (!blog) return res.status(404).json({ message: "Blog not found" });
+      
+      if (blog.isPublished) {
+        await storage.incrementBlogViews(blog.id);
+      }
+      
+      res.json(blog);
+    } catch (error: any) {
+      console.error("Blog fetch error:", error);
+      res.status(500).json({ message: "Error fetching blog", details: error.message });
     }
-    
-    const blog = await storage.updateBlog(id, updatesForDb);
-    if (!blog) return res.status(404).json({ message: "Blog not found" });
-    res.json(blog);
-  } catch (error: any) {
-    console.error("Blog update error:", error);
-    res.status(500).json({ message: "Error updating blog", details: error.message });
-  }
-});
+  });
 
-app.delete("/api/admin/blogs/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const ok = await storage.deleteBlog(id);
-    if (!ok) return res.status(404).json({ message: "Blog not found" });
-    res.json({ ok: true });
-  } catch (error: any) {
-    console.error("Blog delete error:", error);
-    res.status(500).json({ message: "Error deleting blog", details: error.message });
-  }
-});
+  // Admin Blog Routes
+  app.get("/api/admin/blogs", async (_req, res) => {
+    try {
+      const blogs = await storage.getAllBlogs();
+      res.json(blogs);
+    } catch (error: any) {
+      console.error("Admin blogs fetch error:", error);
+      res.status(500).json({ message: "Error fetching blogs", details: error.message });
+    }
+  });
 
-// Add this route after products routes
-app.get("/api/csr-products", async (_req, res) => {
-  try {
-    const allProducts = await storage.getAllProducts();
-    const csrProducts = allProducts.filter(product => 
-      product.csrSupport === true && product.isActive === true
-    );
-    
-    // Enrich with categories
-    const categories = await storage.getAllCategories();
-    const categoryMap = buildCategoryMap(categories);
-    
-    const enrichedProducts = csrProducts.map((product) => 
-      attachCategoriesToProduct(product, categoryMap)
-    );
-    
-    res.json(enrichedProducts);
-  } catch (error: any) {
-    console.error("CSR products fetch error:", error);
-    res.status(500).json({ message: "Error fetching CSR products", details: error.message });
-  }
-});
+  app.get("/api/admin/blogs/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const blog = await storage.getBlog(id);
+      if (!blog) return res.status(404).json({ message: "Blog not found" });
+      res.json(blog);
+    } catch (error: any) {
+      console.error("Admin blog fetch error:", error);
+      res.status(500).json({ message: "Error fetching blog", details: error.message });
+    }
+  });
 
+  app.post("/api/admin/blogs", async (req, res) => {
+    try {
+      const blogData = insertBlogSchema.parse(req.body);
+      
+      const dataForDb = {
+        ...blogData,
+        publishedAt: blogData.isPublished ? new Date() : null,
+      };
+      
+      const blog = await storage.createBlog(dataForDb);
+      res.json(blog);
+    } catch (error: any) {
+      console.error("Blog creation error:", error);
+      res.status(400).json({ message: "Invalid blog data", details: error.message });
+    }
+  });
 
+  app.put("/api/admin/blogs/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const updates = insertBlogSchema.partial().parse(req.body);
+      
+      const updatesForDb: any = { ...updates };
+      if (updates.isPublished !== undefined) {
+        updatesForDb.publishedAt = updates.isPublished ? new Date() : null;
+      }
+      
+      const blog = await storage.updateBlog(id, updatesForDb);
+      if (!blog) return res.status(404).json({ message: "Blog not found" });
+      res.json(blog);
+    } catch (error: any) {
+      console.error("Blog update error:", error);
+      res.status(500).json({ message: "Error updating blog", details: error.message });
+    }
+  });
+
+  app.delete("/api/admin/blogs/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const ok = await storage.deleteBlog(id);
+      if (!ok) return res.status(404).json({ message: "Blog not found" });
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("Blog delete error:", error);
+      res.status(500).json({ message: "Error deleting blog", details: error.message });
+    }
+  });
 }

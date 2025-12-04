@@ -48,17 +48,35 @@ async function markOtpUsed(otpId: string): Promise<void> {
   }
 }
 
+function isValidEmail(email: string): boolean {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+}
+
 export async function lookupByEmail(req: Request, res: Response) {
   try {
     const email = normalizeEmail(req.query.email);
     if (!email) return res.status(400).json({ message: "email required" });
 
     const emp = await storage.getEmployeeByEmail(email);
-    if (!emp) return res.json({ firstName: null, lastName: null, exists: false });
+    if (!emp) {
+      // Check if domain is whitelisted for auto-creation
+      const domainCheck = await storage.checkDomainWhitelisted(email);
+      return res.json({
+        firstName: null,
+        lastName: null,
+        exists: false,
+        domainWhitelisted: domainCheck.isWhitelisted,
+        autoCreate: domainCheck.domain?.autoCreateUser || false,
+        defaultPoints: domainCheck.domain?.defaultPoints || 0
+      });
+    }
     return res.json({
       firstName: emp.firstName || null,
       lastName: emp.lastName || null,
       exists: true,
+      domainWhitelisted: true,
+      autoCreate: false
     });
   } catch (e) {
     console.error("lookupByEmail error:", (e as any)?.message || e);
@@ -76,9 +94,42 @@ export async function sendOTP(req: Request, res: Response) {
       return res.status(400).json({ message: "Invalid email address" });
     }
 
-    const existing = await storage.getEmployeeByEmail(email);
-    const employeePrefill = existing
-      ? { firstName: existing.firstName ?? "", lastName: existing.lastName ?? "" }
+    // Check if domain is whitelisted
+    const domainCheck = await storage.checkDomainWhitelisted(email);
+    if (!domainCheck.isWhitelisted) {
+      return res.status(403).json({ 
+        message: "Your email domain is not authorized to access this platform. Please contact your administrator." 
+      });
+    }
+
+    const domainConfig = domainCheck.domain;
+
+    // Check if user exists or should be auto-created
+    let user = await storage.getEmployeeByEmail(email);
+    let isNewUser = false;
+
+    // Auto-create user if enabled and user doesn't exist
+    if (!user && domainConfig?.autoCreateUser) {
+      // Extract name from email or use defaults
+      const emailName = email.split('@')[0];
+      const firstName = emailName.split('.')[0] || "User";
+      const lastName = emailName.split('.')[1] || "";
+      
+      user = await storage.createEmployee({
+        firstName: firstName.charAt(0).toUpperCase() + firstName.slice(1),
+        lastName: lastName.charAt(0).toUpperCase() + lastName.slice(1),
+        email: email,
+        points: domainConfig.defaultPoints || 0,
+      } as any);
+      isNewUser = true;
+    } else if (!user && !domainConfig?.autoCreateUser) {
+      return res.status(404).json({ 
+        message: "Account not found. Please contact your administrator to create an account." 
+      });
+    }
+
+    const employeePrefill = user
+      ? { firstName: user.firstName ?? "", lastName: user.lastName ?? "" }
       : { firstName: "", lastName: "" };
 
     const code = Math.floor(100000 + Math.random() * 900000).toString();
@@ -101,7 +152,10 @@ export async function sendOTP(req: Request, res: Response) {
       ok: true, 
       timeoutSec, 
       employee: employeePrefill,
-      message: "OTP sent to your email" 
+      isNewUser,
+      message: isNewUser 
+        ? "Account created! OTP sent to your email." 
+        : "OTP sent to your email." 
     });
   } catch (e) {
     console.error("sendOTP error:", (e as any)?.message || e);
@@ -113,10 +167,20 @@ export async function verifyOTP(req: Request, res: Response) {
   try {
     const rawEmail = (req.body as any)?.email;
     const code = String((req.body as any)?.code || "").trim();
+    const firstName = (req.body as any)?.firstName || "";
+    const lastName = (req.body as any)?.lastName || "";
 
     const email = normalizeEmail(rawEmail);
     if (!email || !code) {
       return res.status(400).json({ message: "email and code required" });
+    }
+
+    // Check domain whitelist first
+    const domainCheck = await storage.checkDomainWhitelisted(email);
+    if (!domainCheck.isWhitelisted) {
+      return res.status(403).json({ 
+        message: "Your email domain is not authorized to access this platform." 
+      });
     }
 
     const otpRec = await loadLatestOtpForEmail(email);
@@ -134,13 +198,24 @@ export async function verifyOTP(req: Request, res: Response) {
     await markOtpUsed(otpRec.id);
 
     let user = await storage.getEmployeeByEmail(email);
-    if (!user) {
+    const domainConfig = domainCheck.domain;
+
+    // If user doesn't exist but domain allows auto-creation, create user
+    if (!user && domainConfig?.autoCreateUser) {
+      const emailName = email.split('@')[0];
+      const defaultFirstName = firstName || emailName.split('.')[0] || "User";
+      const defaultLastName = lastName || emailName.split('.')[1] || "";
+      
       user = await storage.createEmployee({
-        firstName: "User",
-        lastName: "",
+        firstName: defaultFirstName.charAt(0).toUpperCase() + defaultFirstName.slice(1),
+        lastName: defaultLastName.charAt(0).toUpperCase() + defaultLastName.slice(1),
         email: email,
-        points: 0,
+        points: domainConfig.defaultPoints || 0,
       } as any);
+    } else if (!user) {
+      return res.status(404).json({ 
+        message: "Account not found. Please contact your administrator." 
+      });
     }
 
     const session = await storage.createSession(user.id);
@@ -160,9 +235,4 @@ export async function verifyOTP(req: Request, res: Response) {
     console.error("verifyOTP error:", (e as any)?.message || e);
     return res.status(500).json({ message: "Failed to verify OTP" });
   }
-}
-
-function isValidEmail(email: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
 }

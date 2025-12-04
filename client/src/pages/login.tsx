@@ -7,10 +7,11 @@ import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { OTPVerificationModal } from "@/components/auth/otp-verification-modal";
-import { Mail, ArrowRight } from "lucide-react";
+import { Mail, ArrowRight, CheckCircle, XCircle, Loader2, Shield } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import whiteGiftImg from '@assets/image_1764034739122.png';
 import carelonLogoImg from '@assets/image_1764034739122.png';
 
@@ -25,14 +26,44 @@ type Branding = {
   updatedAt: string;
 };
 
+interface DomainCheckResult {
+  isWhitelisted: boolean;
+  domain: {
+    domain: string;
+    autoCreateUser: boolean;
+    defaultPoints: number;
+    canLoginWithoutEmployeeId: boolean;
+  } | null;
+}
+
+interface LookupResponse {
+  firstName: string | null;
+  lastName: string | null;
+  exists: boolean;
+  domainWhitelisted?: boolean;
+  autoCreate?: boolean;
+  defaultPoints?: number;
+}
+
 export default function Login() {
   const [email, setEmail] = useState("");
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState("");
-  const [fetchedName, setFetchedName] = useState<{ firstName: string; lastName: string } | null>(null);
+  const [fetchedName, setFetchedName] = useState<LookupResponse | null>(null);
   const [isFetchingName, setIsFetchingName] = useState(false);
   const [showVerificationModal, setShowVerificationModal] = useState(false);
   const [prefill, setPrefill] = useState<{ firstName: string; lastName: string } | null>(null);
+  const [domainStatus, setDomainStatus] = useState<{
+    isWhitelisted: boolean;
+    domain: any;
+    isLoading: boolean;
+    checked: boolean;
+  }>({ 
+    isWhitelisted: false, 
+    domain: null, 
+    isLoading: false,
+    checked: false 
+  });
 
   const { toast } = useToast();
   const { login } = useAuth();
@@ -50,17 +81,65 @@ export default function Login() {
     root.style.setProperty("--brand-accent", accent);
   }, [primary, accent]);
 
+  // Check domain when email changes
+  useEffect(() => {
+    const checkDomain = async () => {
+      const emailDomain = email.split('@')[1];
+      if (!emailDomain) {
+        setDomainStatus({ 
+          isWhitelisted: false, 
+          domain: null, 
+          isLoading: false,
+          checked: false 
+        });
+        return;
+      }
+
+      setDomainStatus(prev => ({ ...prev, isLoading: true }));
+      
+      try {
+        const response = await fetch(`/api/auth/check-domain/${emailDomain}`);
+        if (response.ok) {
+          const data: DomainCheckResult = await response.json();
+          setDomainStatus({ 
+            isWhitelisted: data.isWhitelisted, 
+            domain: data.domain,
+            isLoading: false,
+            checked: true 
+          });
+        }
+      } catch (error) {
+        setDomainStatus({ 
+          isWhitelisted: false, 
+          domain: null, 
+          isLoading: false,
+          checked: true 
+        });
+      }
+    };
+
+    const debounce = setTimeout(checkDomain, 500);
+    return () => clearTimeout(debounce);
+  }, [email]);
+
   const sendOtpMutation = useMutation({
     mutationFn: async (data: { email: string }) => {
       const res = await apiRequest("POST", "/api/auth/send-otp", data);
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
-    onSuccess: () => {
-      setPrefill(fetchedName ?? { firstName: "", lastName: "" });
+    onSuccess: (data) => {
+      setPrefill(fetchedName ? {
+        firstName: fetchedName.firstName || "",
+        lastName: fetchedName.lastName || ""
+      } : { firstName: "", lastName: "" });
       setShowConfirmModal(false);
       setShowVerificationModal(true);
-      toast({ title: "OTP sent", description: "Please check your email" });
+      toast({ 
+        title: "OTP sent", 
+        description: data.message || "Please check your email",
+        variant: data.isNewUser ? "default" : "default"
+      });
     },
     onError: (err: any) => {
       let message = "Failed to send OTP";
@@ -80,7 +159,10 @@ export default function Login() {
     },
     onSuccess: (data) => {
       login(data.token, data.employee, data.expiresAt);
-      toast({ title: "Login Successful", description: `Welcome, ${data.employee.firstName}!` });
+      toast({ 
+        title: "Login Successful", 
+        description: `Welcome, ${data.employee.firstName}!` 
+      });
       setShowVerificationModal(false);
       setLocation("/home");
     },
@@ -118,10 +200,41 @@ export default function Login() {
     const normalizedEmail = email.trim().toLowerCase();
     
     if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
-      toast({ title: "Error", description: "Please enter a valid email address", variant: "destructive" });
+      toast({ 
+        title: "Error", 
+        description: "Please enter a valid email address", 
+        variant: "destructive" 
+      });
       return;
     }
-    
+
+    // Check domain authorization first
+    if (domainStatus.checked && !domainStatus.isWhitelisted) {
+      toast({ 
+        title: "Domain Not Authorized", 
+        description: "Your email domain is not authorized to access this platform.", 
+        variant: "destructive" 
+      });
+      return;
+    }
+
+    // If domain allows auto-creation without checking user existence, go directly to OTP
+    if (domainStatus.domain?.autoCreateUser && domainStatus.domain?.canLoginWithoutEmployeeId) {
+      // Auto-create flow - send OTP directly
+      setConfirmEmail(normalizedEmail);
+      setFetchedName({
+        firstName: "",
+        lastName: "",
+        exists: false,
+        domainWhitelisted: true,
+        autoCreate: true,
+        defaultPoints: domainStatus.domain.defaultPoints || 0
+      });
+      setShowConfirmModal(true);
+      return;
+    }
+
+    // For existing users or domains that require pre-registration
     setConfirmEmail(normalizedEmail);
     setFetchedName(null);
     setShowConfirmModal(true);
@@ -133,80 +246,199 @@ export default function Login() {
         headers: { "accept": "application/json" },
       });
       if (res.ok) {
-        const data = await res.json();
-        setFetchedName({
-          firstName: data?.firstName || "",
-          lastName: data?.lastName || "",
-        });
+        const data: LookupResponse = await res.json();
+        setFetchedName(data);
+        
+        if (!data.exists && !data.autoCreate && !data.domainWhitelisted) {
+          toast({ 
+            title: "Account Not Found", 
+            description: "No account exists for this email. Please contact your administrator.", 
+            variant: "destructive" 
+          });
+          setShowConfirmModal(false);
+        }
       } else if (res.status === 404) {
-        setFetchedName(null);
-        toast({ title: "Not found", description: "No employee found for this email address.", variant: "destructive" });
+        setFetchedName({
+          firstName: "",
+          lastName: "",
+          exists: false,
+          domainWhitelisted: false,
+          autoCreate: false
+        });
       } else {
         const msg = await res.text();
-        toast({ title: "Lookup failed", description: msg || "Unable to fetch user name.", variant: "destructive" });
+        toast({ 
+          title: "Lookup failed", 
+          description: msg || "Unable to fetch user information.", 
+          variant: "destructive" 
+        });
       }
     } catch (err: any) {
-      toast({ title: "Lookup error", description: err?.message || "Unable to fetch user name.", variant: "destructive" });
+      toast({ 
+        title: "Lookup error", 
+        description: err?.message || "Unable to fetch user information.", 
+        variant: "destructive" 
+      });
     } finally {
       setIsFetchingName(false);
     }
   };
 
   function ConfirmUserModal() {
-    const disabled = isFetchingName || !fetchedName;
+    const isAutoCreateUser = fetchedName?.autoCreate && !fetchedName?.exists;
+    const isExistingUser = fetchedName?.exists;
+    const isDomainWhitelisted = fetchedName?.domainWhitelisted || domainStatus.isWhitelisted;
+    
+    const canProceed = isFetchingName ? false : 
+      isExistingUser ? true : // Existing users can always proceed
+      isAutoCreateUser ? true : // Auto-create users can proceed
+      false; // Others cannot
+
+    const getStatusMessage = () => {
+      if (isFetchingName) return "Checking account status...";
+      if (isExistingUser) return "Existing account found";
+      if (isAutoCreateUser) return "New user - Account will be created automatically";
+      if (!isDomainWhitelisted) return "Domain not authorized";
+      return "Account not found";
+    };
+
+    const getStatusColor = () => {
+      if (isFetchingName) return "text-gray-600";
+      if (isExistingUser) return "text-green-600";
+      if (isAutoCreateUser) return "text-blue-600";
+      if (!isDomainWhitelisted) return "text-red-600";
+      return "text-amber-600";
+    };
+
+    const getStatusIcon = () => {
+      if (isFetchingName) return <Loader2 className="h-4 w-4 animate-spin" />;
+      if (isExistingUser) return <CheckCircle className="h-4 w-4" />;
+      if (isAutoCreateUser) return <Shield className="h-4 w-4" />;
+      return <XCircle className="h-4 w-4" />;
+    };
 
     return (
       <Dialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
-        <DialogContent className="max-w-sm">
-          <h3 className="text-lg font-semibold mb-2">Confirm your details</h3>
-          <p className="text-sm text-muted-foreground mb-4">
-            We found the following details for your email. If they're correct, we'll send an OTP.
-          </p>
+        <DialogContent className="max-w-md rounded-lg">
+          <DialogHeader>
+            <DialogTitle>Confirm Login</DialogTitle>
+            <DialogDescription>
+              Verify your email and account details
+            </DialogDescription>
+          </DialogHeader>
 
-          <div className="space-y-3">
+          <div className="space-y-4">
+            {/* Email Display */}
             <div>
               <Label htmlFor="confirm-email">Email Address</Label>
               <Input
                 id="confirm-email"
                 type="email"
                 value={confirmEmail}
-                onChange={(e) => setConfirmEmail(e.target.value.toLowerCase())}
+                readOnly
+                className="bg-gray-50"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>First Name</Label>
-                <Input value={fetchedName?.firstName ?? ""} readOnly />
+            {/* Account Status */}
+            <div className={`p-3 rounded-md border ${isExistingUser ? 'border-green-200 bg-green-50' : 
+              isAutoCreateUser ? 'border-blue-200 bg-blue-50' : 
+              'border-red-200 bg-red-50'}`}>
+              <div className="flex items-center gap-2">
+                {getStatusIcon()}
+                <span className={`text-sm font-medium ${getStatusColor()}`}>
+                  {getStatusMessage()}
+                </span>
               </div>
-              <div>
-                <Label>Last Name</Label>
-                <Input value={fetchedName?.lastName ?? ""} readOnly />
-              </div>
+              {isAutoCreateUser && fetchedName?.defaultPoints && (
+                <p className="text-xs text-blue-600 mt-1">
+                  Will receive {fetchedName.defaultPoints} starting points
+                </p>
+              )}
             </div>
+
+            {/* Name Fields (if existing user) */}
+            {isExistingUser && fetchedName && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>First Name</Label>
+                  <Input 
+                    value={fetchedName.firstName || ""} 
+                    readOnly 
+                    className="bg-gray-50"
+                  />
+                </div>
+                <div>
+                  <Label>Last Name</Label>
+                  <Input 
+                    value={fetchedName.lastName || ""} 
+                    readOnly 
+                    className="bg-gray-50"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Auto-create Notice */}
+            {isAutoCreateUser && (
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+                <p className="text-sm text-blue-800">
+                  <strong>New Account Setup:</strong> This is your first login. Your account will be 
+                  automatically created with the email above.
+                  {fetchedName?.defaultPoints && (
+                    <span> You'll start with {fetchedName.defaultPoints} points.</span>
+                  )}
+                </p>
+              </div>
+            )}
+
+            {/* Domain Not Authorized Warning */}
+            {!isDomainWhitelisted && (
+              <div className="bg-red-50 border border-red-200 rounded-md p-3">
+                <p className="text-sm text-red-800">
+                  <strong>Domain Not Authorized:</strong> Your email domain is not authorized 
+                  to access this platform. Please contact your administrator.
+                </p>
+              </div>
+            )}
           </div>
 
-          <div className="mt-5 flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setShowConfirmModal(false)}>
+          <div className="mt-6 flex justify-end gap-2">
+            <Button 
+              variant="secondary" 
+              onClick={() => setShowConfirmModal(false)}
+            >
               Cancel
             </Button>
             <Button
               onClick={() => {
                 const finalEmail = confirmEmail.trim().toLowerCase();
                 if (!finalEmail || !isValidEmail(finalEmail)) {
-                  toast({ title: "Invalid email", description: "Please check the email address.", variant: "destructive" });
+                  toast({ 
+                    title: "Invalid email", 
+                    description: "Please check the email address.", 
+                    variant: "destructive" 
+                  });
+                  return;
+                }
+                if (!canProceed) {
+                  toast({ 
+                    title: "Cannot Proceed", 
+                    description: "Your account cannot be created or accessed.", 
+                    variant: "destructive" 
+                  });
                   return;
                 }
                 setEmail(finalEmail);
                 sendOtpMutation.mutate({ email: finalEmail });
               }}
-              disabled={disabled || sendOtpMutation.isPending}
+              disabled={!canProceed || sendOtpMutation.isPending}
               style={{ backgroundColor: primary, borderColor: primary }}
             >
-              {isFetchingName
-                ? "Fetching…"
-                : sendOtpMutation.isPending
-                ? "Sending…"
+              {sendOtpMutation.isPending
+                ? "Sending OTP..."
+                : isAutoCreateUser
+                ? "Create Account & Send OTP"
                 : "Send OTP"}
             </Button>
           </div>
@@ -214,6 +446,12 @@ export default function Login() {
       </Dialog>
     );
   }
+
+  const isEmailValid = email.includes('@') && email.includes('.');
+  const emailDomain = email.split('@')[1];
+  const canLogin = isEmailValid && 
+    (domainStatus.checked ? domainStatus.isWhitelisted : true) && 
+    !domainStatus.isLoading;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-purple-100 relative overflow-hidden">
@@ -225,8 +463,6 @@ export default function Login() {
                            radial-gradient(circle at 40% 20%, rgba(59, 130, 246, 0.1) 0%, transparent 50%)`,
         }}
       />
-      
-      
       
       <div className="absolute top-8 left-8">
         <img 
@@ -246,21 +482,68 @@ export default function Login() {
             Login your account
           </p>
           
+          {/* Domain Status Alert */}
+          {emailDomain && domainStatus.checked && (
+            <div className="mb-6 max-w-md mx-auto">
+              <Alert variant={domainStatus.isWhitelisted ? "default" : "destructive"}>
+                <div className="flex items-start gap-2">
+                  {domainStatus.isLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin mt-0.5" />
+                  ) : domainStatus.isWhitelisted ? (
+                    <CheckCircle className="h-4 w-4 text-green-600 mt-0.5" />
+                  ) : (
+                    <XCircle className="h-4 w-4 text-red-600 mt-0.5" />
+                  )}
+                  <AlertDescription className="text-sm">
+                    {domainStatus.isLoading ? (
+                      "Checking domain authorization..."
+                    ) : domainStatus.isWhitelisted ? (
+                      <div className="space-y-1">
+                        <span className="font-medium">Domain authorized</span>
+                        {domainStatus.domain?.autoCreateUser && (
+                          <div className="text-xs text-muted-foreground">
+                            New users from @{emailDomain} can auto-register
+                            {domainStatus.domain.defaultPoints > 0 && (
+                              <span> with {domainStatus.domain.defaultPoints} starting points</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <span className="font-medium">Domain not authorized</span>
+                        <div className="text-xs">
+                          @{emailDomain} is not authorized to access this platform.
+                          Please contact your administrator.
+                        </div>
+                      </div>
+                    )}
+                  </AlertDescription>
+                </div>
+              </Alert>
+            </div>
+          )}
+          
           <form onSubmit={handleSubmit} className="space-y-8">
-            <div className="text-left">
+            <div className="text-left max-w-md mx-auto">
               <Label htmlFor="email" className="text-lg mb-3 block">
-                email address*
+                Email Address*
               </Label>
               <Input
                 id="email"
                 type="email"
-                placeholder=""
+                placeholder="your.name@company.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 className="h-14 bg-white text-lg rounded-lg"
                 data-testid="input-email"
               />
+              {emailDomain && !domainStatus.checked && !domainStatus.isLoading && (
+                <p className="text-xs text-gray-500 mt-2">
+                  Enter a valid company email address
+                </p>
+              )}
             </div>
             
             <Button 
@@ -269,12 +552,40 @@ export default function Login() {
               className="w-full max-w-md h-14 text-lg rounded-full mx-auto flex items-center justify-center gap-2"
               data-testid="button-login"
               style={{ backgroundColor: primary }}
-              disabled={sendOtpMutation.isPending}
+              disabled={sendOtpMutation.isPending || domainStatus.isLoading || !canLogin}
             >
-              {sendOtpMutation.isPending ? "Sending..." : "Log in"}
+              {sendOtpMutation.isPending ? "Sending..." : 
+               domainStatus.isLoading ? "Checking..." : 
+               "Log in"}
               <ArrowRight className="h-5 w-5" />
             </Button>
           </form>
+
+          {/* Login Options Info */}
+          <div className="mt-12 max-w-md mx-auto">
+            <div className="bg-white/50 backdrop-blur-sm rounded-xl p-6 border border-gray-200">
+              <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                <Shield className="h-4 w-4" />
+                Login Options Available
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                    <span className="font-medium">Pre-registered Users</span>
+                  </div>
+                  <p className="text-xs pl-4">Accounts uploaded by administrator</p>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                    <span className="font-medium">Domain Auto-registration</span>
+                  </div>
+                  <p className="text-xs pl-4">First-time users from authorized domains</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -310,4 +621,3 @@ function isValidEmail(email: string): boolean {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
 }
-

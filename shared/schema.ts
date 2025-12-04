@@ -26,6 +26,20 @@ export const categories = pgTable("categories", {
 });
 
 /* =========================================================
+   DOMAIN WHITELIST
+   =======================================================*/
+export const domainWhitelist = pgTable("domain_whitelist", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  domain: text("domain").notNull().unique(),
+  isActive: boolean("is_active").default(true),
+  autoCreateUser: boolean("auto_create_user").default(true),
+  defaultPoints: integer("default_points").default(0),
+  canLoginWithoutEmployeeId: boolean("can_login_without_employee_id").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+/* =========================================================
    EMPLOYEES
    =======================================================*/
 export const employees = pgTable("employees", {
@@ -44,22 +58,22 @@ export const employees = pgTable("employees", {
 /* =========================================================
    PRODUCTS
    =======================================================*/
-   export const products = pgTable("products", {
-    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-    name: text("name").notNull(),
-    price: decimal("price", { precision: 10, scale: 2 }).notNull(),
-    images: json("images").$type<string[]>().default([]),
-    colors: json("colors").$type<string[]>().default([]),
-    stock: integer("stock").default(0),
-    packagesInclude: json("packages_include").$type<string[]>().default([]),
-    specifications: json("specifications").$type<Record<string, string>>().default({}),
-    sku: text("sku").notNull().unique(),
-    isActive: boolean("is_active").default(true),
-    backupProductId: varchar("backup_product_id"),
-    categoryIds: text("category_ids").array().notNull().default(sql`ARRAY[]::text[]`),
-    csrSupport: boolean("csr_support").default(false), // Add this field
-    createdAt: timestamp("created_at").defaultNow(),
-  });
+export const products = pgTable("products", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+  images: json("images").$type<string[]>().default([]),
+  colors: json("colors").$type<string[]>().default([]),
+  stock: integer("stock").default(0),
+  packagesInclude: json("packages_include").$type<string[]>().default([]),
+  specifications: json("specifications").$type<Record<string, string>>().default({}),
+  sku: text("sku").notNull().unique(),
+  isActive: boolean("is_active").default(true),
+  backupProductId: varchar("backup_product_id"),
+  categoryIds: text("category_ids").array().notNull().default(sql`ARRAY[]::text[]`),
+  csrSupport: boolean("csr_support").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
 
 /* =========================================================
    ORDERS
@@ -129,73 +143,8 @@ export const otps = pgTable("otps", {
 });
 
 /* =========================================================
-   ZOD INSERT SCHEMAS
+   CAMPAIGNS
    =======================================================*/
-export const insertCategorySchema = createInsertSchema(categories).pick({
-  name: true,
-  description: true,
-  imageUrl: true,
-  isActive: true,
-  sortOrder: true,
-});
-
-export const insertEmployeeSchema = createInsertSchema(employees).pick({
-  firstName: true,
-  lastName: true,
-  email: true,
-  points: true,
-});
-
-// Fixed product schema with proper JSON handling
-export const insertProductSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  price: z.string().refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) >= 0, "Valid price is required"),
-  images: z.array(z.string()).default([]),
-  colors: z.array(z.string()).default([]),
-  stock: z.number().int().min(0).default(0),
-  packagesInclude: z.array(z.string()).default([]),
-  specifications: z.record(z.string(), z.string()).default({}),
-  sku: z.string().min(1, "SKU is required"),
-  isActive: z.boolean().default(true),
-  backupProductId: z.string().nullable().default(null),
-  categoryIds: z.array(z.string()).default([]),
-  csrSupport: z.boolean().default(false), // Add this
-});
-
-export const insertOrderSchema = createInsertSchema(orders).pick({
-  employeeId: true,
-  productId: true,
-  selectedColor: true,
-  quantity: true,
-  metadata: true,
-});
-
-export const insertCartItemSchema = createInsertSchema(cartItems).pick({
-  employeeId: true,
-  productId: true,
-  selectedColor: true,
-  quantity: true,
-});
-
-/* =========================================================
-   EMAIL OTP FLOW SCHEMAS
-   =========================================================*/
-export const emailLoginSchema = z.object({
-  email: z.string().email("Valid email is required"),
-});
-export const otpVerifySchema = z.object({
-  email: z.string().email("Valid email is required"),
-  code: z.string().min(4, "OTP is required"),
-  firstName: z.string().optional(),
-  lastName: z.string().optional(),
-});
-
-
-// Add to imports
-import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod";
-
-// Update the campaigns table definition
 export const campaigns = pgTable("campaigns", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
@@ -222,7 +171,83 @@ export const campaignProducts = pgTable("campaign_products", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Update the insertCampaignSchema to accept strings and convert to Dates
+/* =========================================================
+   BLOGS
+   =======================================================*/
+export const blogs = pgTable("blogs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  slug: text("slug").notNull().unique(),
+  description: text("description"),
+  content: text("content").notNull(),
+  imageUrl: text("image_url"),
+  author: text("author").default("Admin"),
+  isPublished: boolean("is_published").default(false),
+  publishedAt: timestamp("published_at"),
+  views: integer("views").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+/* =========================================================
+   ZOD INSERT SCHEMAS
+   =======================================================*/
+export const insertCategorySchema = createInsertSchema(categories).pick({
+  name: true,
+  description: true,
+  imageUrl: true,
+  isActive: true,
+  sortOrder: true,
+});
+
+export const insertDomainWhitelistSchema = z.object({
+  domain: z.string().min(1, "Domain is required").refine(
+    val => val.includes('.') && !val.includes('@'),
+    { message: "Please enter a valid domain (e.g., company.com)" }
+  ),
+  isActive: z.boolean().default(true),
+  autoCreateUser: z.boolean().default(true),
+  defaultPoints: z.number().int().min(0).default(0),
+  canLoginWithoutEmployeeId: z.boolean().default(true),
+});
+
+export const insertEmployeeSchema = createInsertSchema(employees).pick({
+  firstName: true,
+  lastName: true,
+  email: true,
+  points: true,
+});
+
+export const insertProductSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  price: z.string().refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) >= 0, "Valid price is required"),
+  images: z.array(z.string()).default([]),
+  colors: z.array(z.string()).default([]),
+  stock: z.number().int().min(0).default(0),
+  packagesInclude: z.array(z.string()).default([]),
+  specifications: z.record(z.string(), z.string()).default({}),
+  sku: z.string().min(1, "SKU is required"),
+  isActive: z.boolean().default(true),
+  backupProductId: z.string().nullable().default(null),
+  categoryIds: z.array(z.string()).default([]),
+  csrSupport: z.boolean().default(false),
+});
+
+export const insertOrderSchema = createInsertSchema(orders).pick({
+  employeeId: true,
+  productId: true,
+  selectedColor: true,
+  quantity: true,
+  metadata: true,
+});
+
+export const insertCartItemSchema = createInsertSchema(cartItems).pick({
+  employeeId: true,
+  productId: true,
+  selectedColor: true,
+  quantity: true,
+});
+
 export const insertCampaignSchema = z.object({
   name: z.string().min(1, "Name is required"),
   description: z.string().optional().nullable().default(null),
@@ -236,56 +261,32 @@ export const insertCampaignSchema = z.object({
 
 export const insertCampaignProductSchema = createInsertSchema(campaignProducts).pick({
   productId: true,
-  // Remove campaignId from here since it comes from URL params
 }).extend({
-  campaignId: z.string().optional(), // Make it optional since it comes from params
+  campaignId: z.string().optional(),
+});
+
+export const insertBlogSchema = z.object({
+  title: z.string().min(1, "Title is required"),
+  slug: z.string().min(1, "Slug is required"),
+  description: z.string().optional().nullable().default(null),
+  content: z.string().min(1, "Content is required"),
+  imageUrl: z.string().optional().nullable().default(null),
+  author: z.string().optional().default("Admin"),
+  isPublished: z.boolean().default(false),
 });
 
 /* =========================================================
-   BLOGS
-   =======================================================*/
-   export const blogs = pgTable("blogs", {
-    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-    title: text("title").notNull(),
-    slug: text("slug").notNull().unique(),
-    description: text("description"),
-    content: text("content").notNull(),
-    imageUrl: text("image_url"),
-    author: text("author").default("Admin"),
-    isPublished: boolean("is_published").default(false),
-    publishedAt: timestamp("published_at"),
-    views: integer("views").default(0),
-    createdAt: timestamp("created_at").defaultNow(),
-    updatedAt: timestamp("updated_at").defaultNow(),
-  });
-  
-  /* =========================================================
-     ZOD INSERT SCHEMAS
-     =======================================================*/
-  export const insertBlogSchema = z.object({
-    title: z.string().min(1, "Title is required"),
-    slug: z.string().min(1, "Slug is required"),
-    description: z.string().optional().nullable().default(null),
-    content: z.string().min(1, "Content is required"),
-    imageUrl: z.string().optional().nullable().default(null),
-    author: z.string().optional().default("Admin"),
-    isPublished: z.boolean().default(false),
-  });
-  
-  /* =========================================================
-     TYPES
-     =======================================================*/
-  export type InsertBlog = z.infer<typeof insertBlogSchema>;
-  export type Blog = typeof blogs.$inferSelect;
-
-/* =========================================================
-   TYPES
-   =======================================================*/
-export type InsertCampaign = z.infer<typeof insertCampaignSchema>;
-export type Campaign = typeof campaigns.$inferSelect;
-
-export type InsertCampaignProduct = z.infer<typeof insertCampaignProductSchema>;
-export type CampaignProduct = typeof campaignProducts.$inferSelect;
+   EMAIL OTP FLOW SCHEMAS
+   =========================================================*/
+export const emailLoginSchema = z.object({
+  email: z.string().email("Valid email is required"),
+});
+export const otpVerifySchema = z.object({
+  email: z.string().email("Valid email is required"),
+  code: z.string().min(4, "OTP is required"),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+});
 
 export const sendOtpSchema = emailLoginSchema;
 export const verifyOtpSchema = otpVerifySchema;
@@ -295,6 +296,9 @@ export const verifyOtpSchema = otpVerifySchema;
    =======================================================*/
 export type InsertCategory = z.infer<typeof insertCategorySchema>;
 export type Category = typeof categories.$inferSelect;
+
+export type InsertDomainWhitelist = z.infer<typeof insertDomainWhitelistSchema>;
+export type DomainWhitelist = typeof domainWhitelist.$inferSelect;
 
 export type InsertEmployee = z.infer<typeof insertEmployeeSchema>;
 export type Employee = typeof employees.$inferSelect;
@@ -309,7 +313,14 @@ export type InsertCartItem = z.infer<typeof insertCartItemSchema>;
 export type CartItem = typeof cartItems.$inferSelect;
 
 export type Session = typeof sessions.$inferSelect;
-
 export type Branding = typeof branding.$inferSelect;
-
 export type OTP = typeof otps.$inferSelect;
+
+export type InsertCampaign = z.infer<typeof insertCampaignSchema>;
+export type Campaign = typeof campaigns.$inferSelect;
+
+export type InsertCampaignProduct = z.infer<typeof insertCampaignProductSchema>;
+export type CampaignProduct = typeof campaignProducts.$inferSelect;
+
+export type InsertBlog = z.infer<typeof insertBlogSchema>;
+export type Blog = typeof blogs.$inferSelect;

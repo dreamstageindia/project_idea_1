@@ -11,6 +11,8 @@ import {
   categories,
   campaigns,
   campaignProducts,
+  domainWhitelist,
+  blogs,
   type Employee,
   type InsertEmployee,
   type Product,
@@ -28,13 +30,12 @@ import {
   type InsertCampaign,
   type CampaignProduct,
   type InsertCampaignProduct,
-} from "@shared/schema";
-import { randomUUID } from "crypto";
-import {
-  blogs,
+  type DomainWhitelist,
+  type InsertDomainWhitelist,
   type Blog,
   type InsertBlog,
 } from "@shared/schema";
+import { randomUUID } from "crypto";
 
 export interface IStorage {
   // Categories
@@ -43,6 +44,16 @@ export interface IStorage {
   createCategory(category: InsertCategory): Promise<Category>;
   updateCategory(id: string, updates: Partial<Category>): Promise<Category | undefined>;
   deleteCategory(id: string): Promise<boolean>;
+
+  // Domain Whitelist
+  getDomainWhitelist(id: string): Promise<DomainWhitelist | undefined>;
+  getAllDomainWhitelists(): Promise<DomainWhitelist[]>;
+  getDomainWhitelistByDomain(domain: string): Promise<DomainWhitelist | undefined>;
+  getActiveDomainWhitelist(): Promise<DomainWhitelist[]>;
+  createDomainWhitelist(domain: InsertDomainWhitelist): Promise<DomainWhitelist>;
+  updateDomainWhitelist(id: string, updates: Partial<DomainWhitelist>): Promise<DomainWhitelist | undefined>;
+  deleteDomainWhitelist(id: string): Promise<boolean>;
+  checkDomainWhitelisted(email: string): Promise<{ isWhitelisted: boolean; domain: DomainWhitelist | null }>;
 
   // Campaigns
   getCampaign(id: string): Promise<Campaign | undefined>;
@@ -100,7 +111,8 @@ export interface IStorage {
   createOTP(rec: { email: string; code: string; expiresAt: Date; metadata?: any }): Promise<OTP>;
   getLastOTPForEmail(email: string): Promise<OTP | undefined>;
   markOTPAsUsed(id: string): Promise<void>;
-  
+
+  // Blogs
   getBlog(id: string): Promise<Blog | undefined>;
   getBlogBySlug(slug: string): Promise<Blog | undefined>;
   getAllBlogs(): Promise<Blog[]>;
@@ -137,6 +149,58 @@ class DrizzleStorage implements IStorage {
   async deleteCategory(id: string) {
     const res = await db.delete(categories).where(eq(categories.id, id));
     return res.rowCount ? res.rowCount > 0 : true;
+  }
+
+  // Domain Whitelist
+  async getDomainWhitelist(id: string) {
+    const rows = await db.select().from(domainWhitelist).where(eq(domainWhitelist.id, id)).limit(1);
+    return rows[0];
+  }
+
+  async getAllDomainWhitelists() {
+    return db.select().from(domainWhitelist).orderBy(desc(domainWhitelist.createdAt));
+  }
+
+  async getDomainWhitelistByDomain(domain: string) {
+    const rows = await db.select().from(domainWhitelist).where(eq(domainWhitelist.domain, domain)).limit(1);
+    return rows[0];
+  }
+
+  async getActiveDomainWhitelist() {
+    return db.select().from(domainWhitelist)
+      .where(eq(domainWhitelist.isActive, true))
+      .orderBy(desc(domainWhitelist.createdAt));
+  }
+
+  async createDomainWhitelist(domainData: InsertDomainWhitelist) {
+    const rows = await db.insert(domainWhitelist).values(domainData).returning();
+    return rows[0];
+  }
+
+  async updateDomainWhitelist(id: string, updates: Partial<DomainWhitelist>) {
+    const rows = await db.update(domainWhitelist)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(domainWhitelist.id, id))
+      .returning();
+    return rows[0];
+  }
+
+  async deleteDomainWhitelist(id: string) {
+    const res = await db.delete(domainWhitelist).where(eq(domainWhitelist.id, id));
+    return res.rowCount ? res.rowCount > 0 : true;
+  }
+
+  async checkDomainWhitelisted(email: string): Promise<{ isWhitelisted: boolean; domain: DomainWhitelist | null }> {
+    const emailDomain = email.split('@')[1]?.toLowerCase();
+    if (!emailDomain) return { isWhitelisted: false, domain: null };
+
+    const domains = await this.getActiveDomainWhitelist();
+    const matchedDomain = domains.find(d => emailDomain === d.domain.toLowerCase());
+    
+    return {
+      isWhitelisted: !!matchedDomain,
+      domain: matchedDomain || null
+    };
   }
 
   // Campaigns
@@ -209,7 +273,6 @@ class DrizzleStorage implements IStorage {
       .set({ views: dsql`${blogs.views} + 1` })
       .where(eq(blogs.id, id));
   }
-
 
   // Campaign Products
   async getCampaignProducts(campaignId: string) {
@@ -311,6 +374,7 @@ class DrizzleStorage implements IStorage {
     return res.rowCount ? res.rowCount > 0 : true;
   }
 
+  // Employees
   async getEmployee(id: string) {
     const rows = await db.select().from(employees).where(eq(employees.id, id)).limit(1);
     return rows[0];
@@ -344,6 +408,7 @@ class DrizzleStorage implements IStorage {
     return db.select().from(employees).orderBy(desc(employees.createdAt));
   }
 
+  // Orders
   async getOrder(id: string) {
     const rows = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
     return rows[0];
@@ -379,6 +444,7 @@ class DrizzleStorage implements IStorage {
     return rows[0];
   }
 
+  // Cart
   async getCartItem(id: string) {
     const rows = await db.select().from(cartItems).where(eq(cartItems.id, id)).limit(1);
     return rows[0];
@@ -407,6 +473,7 @@ class DrizzleStorage implements IStorage {
     await db.delete(cartItems).where(eq(cartItems.employeeId, employeeId));
   }
 
+  // Sessions
   async getSession(token: string) {
     const rows = await db.select().from(sessions).where(eq(sessions.token, token)).limit(1);
     const sess = rows[0];
@@ -432,6 +499,7 @@ class DrizzleStorage implements IStorage {
     return res.rowCount ? res.rowCount > 0 : true;
   }
 
+  // Branding
   async getBranding() {
     const rows = await db.select().from(brandingTable).limit(1);
     return rows[0];
@@ -454,6 +522,7 @@ class DrizzleStorage implements IStorage {
     return rows[0];
   }
 
+  // OTP
   async createOTP(rec: { email: string; code: string; expiresAt: Date; metadata?: any }) {
     const rows = await db
       .insert(otps)

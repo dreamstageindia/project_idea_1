@@ -9,6 +9,7 @@ import { BrandingSection } from "@/components/admin/sections/branding-section";
 import { CampaignsSection } from "@/components/admin/sections/campaigns-section";
 import { useToast } from "@/hooks/use-toast";
 import { BlogsSection } from "@/components/admin/sections/blogs-section";
+import { DomainWhitelistSection } from "@/components/admin/DomainWhitelistSection";
 
 const ADMIN_PASSWORD = "12345678";
 
@@ -63,6 +64,8 @@ export default function Admin() {
         return <AdminDashboard onViewAllOrders={() => setActiveSection("orders")} />;
       case "employees":
         return <EmployeesSection />;
+      case "domains":
+        return <DomainWhitelistSection/>
       case "products":
         return <ProductsSection />;
       case "campaigns": 

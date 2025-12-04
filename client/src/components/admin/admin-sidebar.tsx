@@ -26,6 +26,7 @@ export function AdminSidebar({
   const menuItems = [
     { id: "dashboard", label: "Dashboard", icon: BarChart3 },
     { id: "employees", label: "Employees", icon: Users },
+    { id: "domains", label: "Whitelist Domains", icon: Users },
     { id: "products", label: "Products", icon: Package },
     { id: "campaigns", label: "Campaigns", icon: Megaphone },
     { id: "orders", label: "Orders", icon: Receipt },
