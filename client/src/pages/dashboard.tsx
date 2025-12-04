@@ -45,6 +45,8 @@ type Product = {
   backupProductId?: string | null;
   isBackup?: boolean;
   originalProductId?: string | null;
+  categoryIds?: string[];
+  categories?: Category[];
   category?: {
     id: string;
     name: string;
@@ -346,7 +348,11 @@ export default function Dashboard() {
         
         // Filter by category
         if (selectedCategory !== "all") {
-          return p.category?.id === selectedCategory;
+          const ids = p.categoryIds ?? [];
+          if (ids.includes(selectedCategory)) return true;
+          if (p.categories?.some((cat) => cat.id === selectedCategory)) return true;
+          if (p.category?.id === selectedCategory) return true;
+          return false;
         }
         return true;
       })
@@ -668,3 +674,4 @@ export default function Dashboard() {
     </div>
   );
 }
+

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Plus, UploadIcon, ArrowLeft, ArrowRight, Trash } from "lucide-react";
+import { Plus, UploadIcon, ArrowLeft, ArrowRight, Trash, Heart } from "lucide-react";
 import { uploadFiles, move, removeAt } from "@/lib/admin-utils";
 import type { Product } from "./types";
 import type { Category } from "@/components/admin/categories/types";
@@ -22,8 +22,9 @@ const defaultNewProduct: Partial<Product> = {
   specifications: {},
   sku: "",
   isActive: true,
+  csrSupport: false, // Added CSR Support default
   backupProductId: null,
-  categoryId: null,
+  categoryIds: [],
 };
 
 export function ProductCreate() {
@@ -45,12 +46,13 @@ export function ProductCreate() {
 
   const createProductMutation = useMutation({
     mutationFn: async (body: Partial<Product>) => {
+      console.log("Submitting product data:", JSON.stringify(body, null, 2));
       const res = await apiRequest("POST", `/api/admin/products`, body);
       return res.json();
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/products-admin"] });
-      toast({ title: "Product created" });
+      toast({ title: "Product created successfully" });
       setNewProduct(defaultNewProduct);
       setNewProductImages([]);
       setColorsInput("");
@@ -64,60 +66,69 @@ export function ProductCreate() {
     }),
   });
 
-  // Update colors when colorsInput changes
-  const updateColorsFromInput = useCallback((input: string) => {
-    const colorsArray = input.split(",").map(s => s.trim()).filter(Boolean);
-    setNewProduct(prev => ({ ...prev, colors: colorsArray }));
-  }, []);
-
-  // Update packages when packagesInput changes
-  const updatePackagesFromInput = useCallback((input: string) => {
-    const packagesArray = input.split("\n").map(s => s.trim()).filter(Boolean);
-    setNewProduct(prev => ({ ...prev, packagesInclude: packagesArray }));
-  }, []);
-
-  // Update specifications when specificationsInput changes
-  const updateSpecificationsFromInput = useCallback((input: string) => {
+  // Parse specifications from text input to object
+  const parseSpecifications = (input: string): Record<string, string> => {
     const obj: Record<string, string> = {};
+    if (!input.trim()) return obj;
+    
     input.split("\n").forEach((line) => {
-      const idx = line.indexOf(":");
+      const trimmedLine = line.trim();
+      if (!trimmedLine) return;
+      
+      const idx = trimmedLine.indexOf(":");
       if (idx > 0) {
-        const k = line.slice(0, idx).trim();
-        const v = line.slice(idx + 1).trim();
-        if (k) obj[k] = v;
+        const key = trimmedLine.slice(0, idx).trim();
+        const value = trimmedLine.slice(idx + 1).trim();
+        if (key) obj[key] = value;
       }
     });
-    setNewProduct(prev => ({ ...prev, specifications: obj }));
-  }, []);
+    return obj;
+  };
 
-  const handleCreate = () => {
-    // Ensure all fields are synced before submission
-    updateColorsFromInput(colorsInput);
-    updatePackagesFromInput(packagesInput);
-    updateSpecificationsFromInput(specificationsInput);
-    
-    createProductMutation.mutate({
-      ...newProduct,
-      images: newProductImages,
+  const toggleCategorySelection = (categoryId: string) => {
+    setNewProduct((prev) => {
+      const current = prev.categoryIds ?? [];
+      const exists = current.includes(categoryId);
+      return {
+        ...prev,
+        categoryIds: exists ? current.filter((id) => id !== categoryId) : [...current, categoryId],
+      };
     });
   };
 
-  // Initialize inputs when data loads or changes
-  useState(() => {
-    if (newProduct.colors && newProduct.colors.length > 0 && !colorsInput) {
-      setColorsInput(newProduct.colors.join(", "));
+  const selectedCategoryIds = newProduct.categoryIds ?? [];
+
+  const handleCreate = () => {
+    // Validate required fields
+    if (!newProduct.name?.trim()) {
+      toast({ title: "Name is required", variant: "destructive" });
+      return;
     }
-    if (newProduct.packagesInclude && newProduct.packagesInclude.length > 0 && !packagesInput) {
-      setPackagesInput(newProduct.packagesInclude.join("\n"));
+    if (!newProduct.sku?.trim()) {
+      toast({ title: "SKU is required", variant: "destructive" });
+      return;
     }
-    if (newProduct.specifications && Object.keys(newProduct.specifications).length > 0 && !specificationsInput) {
-      setSpecificationsInput(
-        Object.entries(newProduct.specifications)
-          .map(([k, v]) => `${k}: ${v}`)
-          .join("\n")
-      );
-    }
-  });
+
+    // Build the complete product data
+    const productData = {
+      name: newProduct.name.trim(),
+      price: newProduct.price || "0.00",
+      sku: newProduct.sku.trim(),
+      stock: newProduct.stock || 0,
+      categoryIds: newProduct.categoryIds ?? [],
+      backupProductId: newProduct.backupProductId || null,
+      isActive: newProduct.isActive !== false,
+      csrSupport: newProduct.csrSupport || false, // Added CSR Support
+      images: newProductImages,
+      colors: colorsInput.split(",").map(s => s.trim()).filter(Boolean),
+      packagesInclude: packagesInput.split("\n").map(s => s.trim()).filter(Boolean),
+      specifications: parseSpecifications(specificationsInput),
+    };
+
+    console.log("Final product data to submit:", productData);
+    
+    createProductMutation.mutate(productData);
+  };
 
   return (
     <Card>
@@ -128,7 +139,7 @@ export function ProductCreate() {
         <div className="grid md:grid-cols-2 gap-4">
           {/* Name */}
           <div>
-            <Label htmlFor="product-name">Name</Label>
+            <Label htmlFor="product-name">Name *</Label>
             <Input
               id="product-name"
               value={newProduct.name || ""}
@@ -139,43 +150,54 @@ export function ProductCreate() {
 
           {/* Price */}
           <div>
-            <Label htmlFor="product-price">Price</Label>
+            <Label htmlFor="product-price">Price *</Label>
             <Input
               id="product-price"
               type="number"
               step="0.01"
+              min="0"
               value={newProduct.price || ""}
               onChange={(e) => setNewProduct((p) => ({ ...p, price: e.target.value }))}
               placeholder="0.00"
             />
           </div>
 
-          {/* Category */}
-          <div>
-            <Label htmlFor="product-category">Category</Label>
-            <select
-              id="product-category"
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              value={newProduct.categoryId ?? ""}
-              onChange={(e) =>
-                setNewProduct((p) => ({
-                  ...p,
-                  categoryId: e.target.value ? e.target.value : null,
-                }))
-              }
-            >
-              <option value="">— No Category —</option>
-              {categories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
+          {/* Categories */}
+          <div className="md:col-span-2">
+            <Label>Categories</Label>
+            {categories.length ? (
+              <div className="mt-2 grid sm:grid-cols-2 gap-2">
+                {categories.map((category) => {
+                  const selected = selectedCategoryIds.includes(category.id);
+                  return (
+                    <label
+                      key={category.id}
+                      className="flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={selected}
+                        onChange={() => toggleCategorySelection(category.id)}
+                      />
+                      <span>{category.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground mt-2">No categories available.</p>
+            )}
+            {!!selectedCategoryIds.length && (
+              <p className="text-xs text-muted-foreground mt-2">
+                Selected categories: {selectedCategoryIds.length}
+              </p>
+            )}
           </div>
 
           {/* SKU */}
           <div>
-            <Label htmlFor="product-sku">SKU</Label>
+            <Label htmlFor="product-sku">SKU *</Label>
             <Input
               id="product-sku"
               value={newProduct.sku || ""}
@@ -251,17 +273,13 @@ export function ProductCreate() {
             )}
           </div>
 
-          {/* Colors - Using separate state for input */}
+          {/* Colors */}
           <div>
             <Label htmlFor="product-colors">Colors (comma-separated)</Label>
             <Input
               id="product-colors"
               value={colorsInput}
-              onChange={(e) => {
-                setColorsInput(e.target.value);
-                updateColorsFromInput(e.target.value);
-              }}
-              onBlur={() => updateColorsFromInput(colorsInput)}
+              onChange={(e) => setColorsInput(e.target.value)}
               placeholder="Red, Blue, Green"
             />
           </div>
@@ -272,6 +290,7 @@ export function ProductCreate() {
             <Input
               id="product-stock"
               type="number"
+              min="0"
               value={String(newProduct.stock ?? 0)}
               onChange={(e) =>
                 setNewProduct((p) => ({ ...p, stock: Number(e.target.value) || 0 }))
@@ -280,36 +299,31 @@ export function ProductCreate() {
             />
           </div>
 
-          {/* Packages Include - Using separate state for input */}
+          {/* Packages Include */}
           <div className="md:col-span-2">
             <Label htmlFor="product-packages">Packages Include (one per line)</Label>
             <Textarea
               id="product-packages"
               value={packagesInput}
-              onChange={(e) => {
-                setPackagesInput(e.target.value);
-                updatePackagesFromInput(e.target.value);
-              }}
-              onBlur={() => updatePackagesFromInput(packagesInput)}
-              placeholder="Item 1\nItem 2\nItem 3"
-              rows={4}
+              onChange={(e) => setPackagesInput(e.target.value)}
+              placeholder="Item 1&#10;Item 2&#10;Item 3"
+              rows={3}
             />
           </div>
 
-          {/* Specifications - Using separate state for input */}
+          {/* Specifications */}
           <div className="md:col-span-2">
             <Label htmlFor="product-specifications">Specifications (key:value, one per line)</Label>
             <Textarea
               id="product-specifications"
               value={specificationsInput}
-              onChange={(e) => {
-                setSpecificationsInput(e.target.value);
-                updateSpecificationsFromInput(e.target.value);
-              }}
-              onBlur={() => updateSpecificationsFromInput(specificationsInput)}
-              placeholder="Weight: 2kg\nDimensions: 10x20x5cm\nMaterial: Plastic"
+              onChange={(e) => setSpecificationsInput(e.target.value)}
+              placeholder="Weight: 2kg&#10;Dimensions: 10x20x5cm&#10;Material: Plastic"
               rows={4}
             />
+            <p className="text-sm text-muted-foreground mt-1">
+              Format: Key: Value (one specification per line)
+            </p>
           </div>
 
           {/* Backup Product */}
@@ -349,6 +363,27 @@ export function ProductCreate() {
               <Label htmlFor="isActive" className="text-sm">Product is active</Label>
             </div>
           </div>
+
+          {/* CSR Support */}
+          <div>
+            <Label>CSR Support</Label>
+            <div className="flex items-center gap-2 mt-2">
+              <input
+                id="csrSupport"
+                type="checkbox"
+                className="h-4 w-4"
+                checked={Boolean(newProduct.csrSupport)}
+                onChange={(e) => setNewProduct((p) => ({ ...p, csrSupport: e.target.checked }))}
+              />
+              <Label htmlFor="csrSupport" className="text-sm flex items-center gap-1">
+                <Heart className="h-3 w-3 text-red-500" />
+                Available for CSR Support
+              </Label>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              If checked, this product will appear in CSR Support page
+            </p>
+          </div>
         </div>
 
         <div className="flex gap-2">
@@ -357,7 +392,7 @@ export function ProductCreate() {
             disabled={createProductMutation.isPending}
           >
             <Plus className="h-4 w-4 mr-2" />
-            Create Product
+            {createProductMutation.isPending ? "Creating..." : "Create Product"}
           </Button>
         </div>
       </CardContent>

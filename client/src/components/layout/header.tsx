@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { Building, LogOut, Menu, X, ShoppingCart, History } from "lucide-react";
 import { useLocation } from "wouter";
-import { apiRequest } from "@/lib/queryClient";
 import { Badge } from "@/components/ui/badge";
 
 type Branding = {
@@ -46,6 +45,14 @@ export function Header() {
   const primary = branding?.primaryColor || "#1e40af";
   const logoUrl = branding?.logoUrl || null;
 
+  const navLinks = [
+    { id: "brand-store", label: "Brand Store", path: "/dashboard" },
+    { id: "special-occasions", label: "Special Occasions", path: "/special-occasions" },
+    { id: "bulk-buy", label: "CSR Support", path: "/csr" },
+    { id: "csr-blog", label: "Blog", path: "/blog" },
+    
+  ];
+
   const handleLogout = () => {
     logout();
     setLocation("/");
@@ -68,6 +75,18 @@ export function Header() {
                 <Building className="text-gray-900 h-8 w-8" />
               )}
             </div>
+            <nav className="hidden md:flex items-center space-x-4">
+              {navLinks.map((link) => (
+                <Button
+                  key={link.id}
+                  variant="ghost"
+                  className="text-gray-700 hover:text-gray-900 hover:bg-gray-100"
+                  onClick={() => setLocation(link.path)}
+                >
+                  {link.label}
+                </Button>
+              ))}
+            </nav>
           </div>
 
           {/* User Menu */}
@@ -148,6 +167,19 @@ export function Header() {
       {isMobileMenuOpen && (
         <div className="md:hidden border-t border-gray-200 bg-white">
           <nav className="p-4 space-y-4">
+            {navLinks.map((link) => (
+              <Button
+                key={link.id}
+                variant="ghost"
+                className="w-full justify-start text-gray-700 hover:text-gray-900 hover:bg-gray-100"
+                onClick={() => {
+                  setLocation(link.path);
+                  setIsMobileMenuOpen(false);
+                }}
+              >
+                {link.label}
+              </Button>
+            ))}
             <div className="px-4 py-3 border-b border-gray-200">
               <p className="font-medium text-gray-900">
                 {employee?.firstName} {employee?.lastName}

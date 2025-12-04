@@ -1,4 +1,4 @@
-// server/registerRoutes.ts
+// server/Routes.ts
 import type { Express } from "express";
 import path from "node:path";
 import fs from "node:fs";
@@ -8,11 +8,23 @@ import {
   insertEmployeeSchema,
   insertCartItemSchema,
   insertCategorySchema, // Add this import
+  type Product,
+  type Category,
 } from "@shared/schema";
 import { storage } from "./storage";
 import { sendOTP, verifyOTP, lookupByEmail } from "./auth-otp";
 import crypto from "crypto";
 import "dotenv/config";
+import {
+  insertCampaignSchema,
+  insertCampaignProductSchema,
+  type Campaign,
+} from "@shared/schema";
+
+import {
+  insertBlogSchema,
+  type Blog,
+} from "@shared/schema";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(UPLOAD_DIR)) {
@@ -45,6 +57,28 @@ function toPublicUrl(absPath: string) {
 function isValidEmail(email: string): boolean {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
+}
+
+type CategoryMap = Map<string, Category>;
+
+function buildCategoryMap(list: Category[]): CategoryMap {
+  return new Map(list.map((category) => [category.id, category]));
+}
+
+function attachCategoriesToProduct<T extends Product>(
+  product: T,
+  categoryMap: CategoryMap
+) {
+  const categories =
+    product.categoryIds
+      ?.map((id) => categoryMap.get(id))
+      .filter((cat): cat is Category => Boolean(cat)) ?? [];
+
+  return {
+    ...product,
+    categories,
+    category: categories[0] ?? null,
+  };
 }
 
 export async function registerRoutes(app: Express): Promise<void> {
@@ -100,7 +134,10 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const { id } = req.params;
       const products = await storage.getProductsByCategory(id);
-      res.json(products);
+      const categories = await storage.getAllCategories();
+      const categoryMap = buildCategoryMap(categories);
+      const enriched = products.map((product) => attachCategoriesToProduct(product, categoryMap));
+      res.json(enriched);
     } catch {
       res.status(500).json({ message: "Error fetching category products" });
     }
@@ -142,34 +179,29 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const all = await storage.getAllProducts();
       const categories = await storage.getAllCategories();
+      const categoryMap = buildCategoryMap(categories);
+      const enriched = all.map((product) => attachCategoriesToProduct(product, categoryMap));
       
-      const byId = new Map(all.map((p) => [p.id, p]));
+      const byId = new Map(enriched.map((p) => [p.id, p]));
       const backupCandidateIds = new Set(
-        all
+        enriched
           .map((p) => p.backupProductId)
           .filter((v): v is string => Boolean(v))
       );
-      const originals = all.filter((p) => !backupCandidateIds.has(p.id));
+      const originals = enriched.filter((p) => !backupCandidateIds.has(p.id));
       const visible: any[] = [];
       
       for (const orig of originals) {
         const origStock = Number(orig.stock || 0);
         if (origStock > 0) {
-          // Add category info to product
-          const category = categories.find(c => c.id === orig.categoryId);
-          visible.push({
-            ...orig,
-            category: category || null
-          });
+          visible.push(orig);
         } else if (origStock <= 0 && orig.backupProductId) {
           const backup = byId.get(orig.backupProductId);
           if (backup && Number(backup.stock || 0) > 0 && backup.isActive !== false) {
-            const category = categories.find(c => c.id === backup.categoryId);
             visible.push({
               ...backup,
               isBackup: true,
               originalProductId: orig.id,
-              category: category || null
             });
           }
         }
@@ -184,25 +216,21 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const products = await storage.getAllProducts();
       const categories = await storage.getAllCategories();
+      const categoryMap = buildCategoryMap(categories);
       const productsWithBackups: any[] = [];
       
       for (const product of products) {
-        // Add category info to product
-        const category = categories.find(c => c.id === product.categoryId);
-        productsWithBackups.push({
-          ...product,
-          category: category || null
-        });
+        const enrichedProduct = attachCategoriesToProduct(product, categoryMap);
+        productsWithBackups.push(enrichedProduct);
         
         if (product.stock === 0 && product.backupProductId) {
           const backupProduct = await storage.getProduct(product.backupProductId);
           if (backupProduct && (backupProduct.stock || 0) > 0) {
-            const backupCategory = categories.find(c => c.id === backupProduct.categoryId);
+            const enrichedBackup = attachCategoriesToProduct(backupProduct, categoryMap);
             productsWithBackups.push({
-              ...backupProduct,
+              ...enrichedBackup,
               isBackup: true,
               originalProductId: product.id,
-              category: backupCategory || null
             });
           }
         }
@@ -218,14 +246,11 @@ export async function registerRoutes(app: Express): Promise<void> {
       const product = await storage.getProduct(req.params.id);
       if (!product) return res.status(404).json({ message: "Product not found" });
       
-      // Add category info to single product
       const categories = await storage.getAllCategories();
-      const category = categories.find(c => c.id === product.categoryId);
+      const categoryMap = buildCategoryMap(categories);
+      const enrichedProduct = attachCategoriesToProduct(product, categoryMap);
       
-      res.json({
-        ...product,
-        category: category || null
-      });
+      res.json(enrichedProduct);
     } catch {
       res.status(500).json({ message: "Error fetching product" });
     }
@@ -239,17 +264,14 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (!session) return res.status(401).json({ message: "Invalid session" });
       const items = await storage.getCartItems(session.employeeId);
       const categories = await storage.getAllCategories();
+      const categoryMap = buildCategoryMap(categories);
       
       const detailedItems = await Promise.all(
         items.map(async (item) => {
           const product = await storage.getProduct(item.productId);
-          const category = categories.find(c => c.id === product?.categoryId);
           return {
             ...item,
-            product: product ? {
-              ...product,
-              category: category || null
-            } : null
+            product: product ? attachCategoriesToProduct(product, categoryMap) : null
           };
         })
       );
@@ -625,19 +647,16 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (!session) return res.status(401).json({ message: "Invalid session" });
       const orders = await storage.getOrdersByEmployeeId(session.employeeId);
       const categories = await storage.getAllCategories();
+      const categoryMap = buildCategoryMap(categories);
       
       const detailedOrders = await Promise.all(
         orders.map(async (order) => {
           const product = await storage.getProduct(order.productId);
-          const category = categories.find(c => c.id === product?.categoryId);
           const employee = await storage.getEmployee(order.employeeId);
           
           return {
             order,
-            product: product ? {
-              ...product,
-              category: category || null
-            } : null,
+            product: product ? attachCategoriesToProduct(product, categoryMap) : null,
             employee
           };
         })
@@ -781,19 +800,16 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const ords = await storage.getAllOrders();
       const categories = await storage.getAllCategories();
+      const categoryMap = buildCategoryMap(categories);
       
       const withDetails = await Promise.all(
         ords.map(async (o) => {
           const product = await storage.getProduct(o.productId);
-          const category = categories.find(c => c.id === product?.categoryId);
           const employee = await storage.getEmployee(o.employeeId);
           
           return {
             ...o,
-            product: product ? {
-              ...product,
-              category: category || null
-            } : null,
+            product: product ? attachCategoriesToProduct(product, categoryMap) : null,
             employee
           };
         })
@@ -865,4 +881,293 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.status(500).json({ message: "Lookup failed" });
     }
   });
+
+  app.get("/api/campaigns", async (_req, res) => {
+    try {
+      const campaigns = await storage.getAllCampaigns();
+      res.json(campaigns);
+    } catch {
+      res.status(500).json({ message: "Error fetching campaigns" });
+    }
+  });
+  
+  app.get("/api/campaigns/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const campaign = await storage.getCampaign(id);
+      if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+      res.json(campaign);
+    } catch {
+      res.status(500).json({ message: "Error fetching campaign" });
+    }
+  });
+  
+  app.get("/api/campaigns/:id/products", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const campaignProducts = await storage.getCampaignProducts(id);
+      
+      // Enrich products with categories
+      const categories = await storage.getAllCategories();
+      const categoryMap = buildCategoryMap(categories);
+      
+      const enrichedProducts = campaignProducts.map(cp => ({
+        ...cp.product,
+        categories: cp.product.categoryIds
+          ?.map((catId: string) => categoryMap.get(catId))
+          .filter((cat): cat is Category => Boolean(cat)) ?? [],
+      }));
+      
+      res.json(enrichedProducts);
+    } catch {
+      res.status(500).json({ message: "Error fetching campaign products" });
+    }
+  });
+  
+  app.post("/api/admin/campaigns", async (req, res) => {
+    try {
+      // Parse with the schema that converts strings to Dates
+      const campaignData = insertCampaignSchema.parse(req.body);
+      
+      // The schema transformation already converted strings to Date objects
+      // Drizzle can handle Date objects directly
+      const campaign = await storage.createCampaign(campaignData);
+      res.json(campaign);
+    } catch (error: any) {
+      console.error("Campaign creation error:", error);
+      res.status(400).json({ message: "Invalid campaign data", details: error.message });
+    }
+  });
+  
+  app.put("/api/admin/campaigns/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      // Use partial() to allow updating only some fields
+      const updates = insertCampaignSchema.partial().parse(req.body);
+      
+      const campaign = await storage.updateCampaign(id, updates);
+      if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+      res.json(campaign);
+    } catch (error: any) {
+      console.error("Campaign update error:", error);
+      res.status(500).json({ message: "Error updating campaign", details: error.message });
+    }
+  });
+  
+  app.delete("/api/admin/campaigns/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const ok = await storage.deleteCampaign(id);
+      if (!ok) return res.status(404).json({ message: "Campaign not found" });
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("Campaign delete error:", error);
+      res.status(500).json({ message: "Error deleting campaign", details: error.message });
+    }
+  });
+  
+  // Fix the add product to campaign route
+app.post("/api/admin/campaigns/:campaignId/products", async (req, res) => {
+  try {
+    const { campaignId } = req.params;
+    const { productId } = req.body; // Just get productId from body
+    
+    if (!productId) {
+      return res.status(400).json({ message: "Product ID is required" });
+    }
+    
+    // Verify campaign exists
+    const campaign = await storage.getCampaign(campaignId);
+    if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+    
+    // Verify product exists
+    const product = await storage.getProduct(productId);
+    if (!product) return res.status(404).json({ message: "Product not found" });
+    
+    const campaignProduct = await storage.addProductToCampaign(campaignId, productId);
+    res.json(campaignProduct);
+  } catch (error: any) {
+    console.error("Add product to campaign error:", error);
+    res.status(400).json({ message: "Error adding product to campaign", details: error.message });
+  }
+});
+  
+  app.delete("/api/admin/campaigns/:campaignId/products/:productId", async (req, res) => {
+    try {
+      const { campaignId, productId } = req.params;
+      
+      // Find the campaign product record
+      const campaignProducts = await storage.getCampaignProducts(campaignId);
+      const campaignProduct = campaignProducts.find(cp => cp.product.id === productId);
+      
+      if (!campaignProduct) {
+        return res.status(404).json({ message: "Product not found in campaign" });
+      }
+      
+      const ok = await storage.removeProductFromCampaign(campaignProduct.campaignProduct.id);
+      if (!ok) return res.status(500).json({ message: "Error removing product from campaign" });
+      
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("Remove product from campaign error:", error);
+      res.status(500).json({ message: "Error removing product from campaign", details: error.message });
+    }
+  });
+  
+  app.get("/api/admin/products/:productId/campaigns", async (req, res) => {
+    try {
+      const { productId } = req.params;
+      const campaigns = await storage.getProductCampaigns(productId);
+      res.json(campaigns);
+    } catch (error: any) {
+      console.error("Get product campaigns error:", error);
+      res.status(500).json({ message: "Error fetching product campaigns", details: error.message });
+    }
+  });
+
+  // Add this route
+app.get("/api/admin/product-campaigns", async (_req, res) => {
+  try {
+    const allProducts = await storage.getAllProducts();
+    const result: Record<string, Campaign[]> = {};
+    
+    // Get campaigns for each product
+    for (const product of allProducts) {
+      const campaigns = await storage.getProductCampaigns(product.id);
+      result[product.id] = campaigns;
+    }
+    
+    res.json(result);
+  } catch (error: any) {
+    console.error("Get product campaigns error:", error);
+    res.status(500).json({ message: "Error fetching product campaigns", details: error.message });
+  }
+});
+
+// Blogs API
+app.get("/api/blogs", async (_req, res) => {
+  try {
+    const blogs = await storage.getPublishedBlogs();
+    res.json(blogs);
+  } catch (error: any) {
+    console.error("Blogs fetch error:", error);
+    res.status(500).json({ message: "Error fetching blogs", details: error.message });
+  }
+});
+
+app.get("/api/blogs/:slug", async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const blog = await storage.getBlogBySlug(slug);
+    if (!blog) return res.status(404).json({ message: "Blog not found" });
+    
+    // Increment views
+    if (blog.isPublished) {
+      await storage.incrementBlogViews(blog.id);
+    }
+    
+    res.json(blog);
+  } catch (error: any) {
+    console.error("Blog fetch error:", error);
+    res.status(500).json({ message: "Error fetching blog", details: error.message });
+  }
+});
+
+// Admin Blog Routes
+app.get("/api/admin/blogs", async (_req, res) => {
+  try {
+    const blogs = await storage.getAllBlogs();
+    res.json(blogs);
+  } catch (error: any) {
+    console.error("Admin blogs fetch error:", error);
+    res.status(500).json({ message: "Error fetching blogs", details: error.message });
+  }
+});
+
+app.get("/api/admin/blogs/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const blog = await storage.getBlog(id);
+    if (!blog) return res.status(404).json({ message: "Blog not found" });
+    res.json(blog);
+  } catch (error: any) {
+    console.error("Admin blog fetch error:", error);
+    res.status(500).json({ message: "Error fetching blog", details: error.message });
+  }
+});
+
+app.post("/api/admin/blogs", async (req, res) => {
+  try {
+    const blogData = insertBlogSchema.parse(req.body);
+    
+    // Set publishedAt if publishing
+    const dataForDb = {
+      ...blogData,
+      publishedAt: blogData.isPublished ? new Date() : null,
+    };
+    
+    const blog = await storage.createBlog(dataForDb);
+    res.json(blog);
+  } catch (error: any) {
+    console.error("Blog creation error:", error);
+    res.status(400).json({ message: "Invalid blog data", details: error.message });
+  }
+});
+
+app.put("/api/admin/blogs/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = insertBlogSchema.partial().parse(req.body);
+    
+    // Update publishedAt if publishing
+    const updatesForDb: any = { ...updates };
+    if (updates.isPublished !== undefined) {
+      updatesForDb.publishedAt = updates.isPublished ? new Date() : null;
+    }
+    
+    const blog = await storage.updateBlog(id, updatesForDb);
+    if (!blog) return res.status(404).json({ message: "Blog not found" });
+    res.json(blog);
+  } catch (error: any) {
+    console.error("Blog update error:", error);
+    res.status(500).json({ message: "Error updating blog", details: error.message });
+  }
+});
+
+app.delete("/api/admin/blogs/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const ok = await storage.deleteBlog(id);
+    if (!ok) return res.status(404).json({ message: "Blog not found" });
+    res.json({ ok: true });
+  } catch (error: any) {
+    console.error("Blog delete error:", error);
+    res.status(500).json({ message: "Error deleting blog", details: error.message });
+  }
+});
+
+// Add this route after products routes
+app.get("/api/csr-products", async (_req, res) => {
+  try {
+    const allProducts = await storage.getAllProducts();
+    const csrProducts = allProducts.filter(product => 
+      product.csrSupport === true && product.isActive === true
+    );
+    
+    // Enrich with categories
+    const categories = await storage.getAllCategories();
+    const categoryMap = buildCategoryMap(categories);
+    
+    const enrichedProducts = csrProducts.map((product) => 
+      attachCategoriesToProduct(product, categoryMap)
+    );
+    
+    res.json(enrichedProducts);
+  } catch (error: any) {
+    console.error("CSR products fetch error:", error);
+    res.status(500).json({ message: "Error fetching CSR products", details: error.message });
+  }
+});
+
+
 }

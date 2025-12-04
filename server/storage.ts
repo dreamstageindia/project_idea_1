@@ -9,6 +9,8 @@ import {
   branding as brandingTable,
   otps,
   categories,
+  campaigns,
+  campaignProducts,
   type Employee,
   type InsertEmployee,
   type Product,
@@ -22,8 +24,17 @@ import {
   type OTP,
   type Category,
   type InsertCategory,
+  type Campaign,
+  type InsertCampaign,
+  type CampaignProduct,
+  type InsertCampaignProduct,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
+import {
+  blogs,
+  type Blog,
+  type InsertBlog,
+} from "@shared/schema";
 
 export interface IStorage {
   // Categories
@@ -32,6 +43,19 @@ export interface IStorage {
   createCategory(category: InsertCategory): Promise<Category>;
   updateCategory(id: string, updates: Partial<Category>): Promise<Category | undefined>;
   deleteCategory(id: string): Promise<boolean>;
+
+  // Campaigns
+  getCampaign(id: string): Promise<Campaign | undefined>;
+  getAllCampaigns(): Promise<Campaign[]>;
+  createCampaign(campaign: InsertCampaign): Promise<Campaign>;
+  updateCampaign(id: string, updates: Partial<Campaign>): Promise<Campaign | undefined>;
+  deleteCampaign(id: string): Promise<boolean>;
+  
+  // Campaign Products
+  getCampaignProducts(campaignId: string): Promise<{ product: Product; campaignProduct: CampaignProduct }[]>;
+  addProductToCampaign(campaignId: string, productId: string): Promise<CampaignProduct>;
+  removeProductFromCampaign(campaignProductId: string): Promise<boolean>;
+  getProductCampaigns(productId: string): Promise<Campaign[]>;
 
   // Employees
   getEmployee(id: string): Promise<Employee | undefined>;
@@ -76,6 +100,15 @@ export interface IStorage {
   createOTP(rec: { email: string; code: string; expiresAt: Date; metadata?: any }): Promise<OTP>;
   getLastOTPForEmail(email: string): Promise<OTP | undefined>;
   markOTPAsUsed(id: string): Promise<void>;
+  
+  getBlog(id: string): Promise<Blog | undefined>;
+  getBlogBySlug(slug: string): Promise<Blog | undefined>;
+  getAllBlogs(): Promise<Blog[]>;
+  getPublishedBlogs(): Promise<Blog[]>;
+  createBlog(blog: InsertBlog): Promise<Blog>;
+  updateBlog(id: string, updates: Partial<Blog>): Promise<Blog | undefined>;
+  deleteBlog(id: string): Promise<boolean>;
+  incrementBlogViews(id: string): Promise<void>;
 }
 
 class DrizzleStorage implements IStorage {
@@ -106,6 +139,136 @@ class DrizzleStorage implements IStorage {
     return res.rowCount ? res.rowCount > 0 : true;
   }
 
+  // Campaigns
+  async getCampaign(id: string) {
+    const rows = await db.select().from(campaigns).where(eq(campaigns.id, id)).limit(1);
+    return rows[0];
+  }
+
+  async getAllCampaigns() {
+    return db.select().from(campaigns).orderBy(desc(campaigns.createdAt));
+  }
+
+  async createCampaign(campaignData: InsertCampaign) {
+    const rows = await db.insert(campaigns).values(campaignData).returning();
+    return rows[0];
+  }
+
+  async updateCampaign(id: string, updates: Partial<Campaign>) {
+    const rows = await db.update(campaigns).set({ ...updates, updatedAt: new Date() })
+      .where(eq(campaigns.id, id)).returning();
+    return rows[0];
+  }
+
+  async deleteCampaign(id: string) {
+    const res = await db.delete(campaigns).where(eq(campaigns.id, id));
+    return res.rowCount ? res.rowCount > 0 : true;
+  }
+
+  // Blogs
+  async getBlog(id: string) {
+    const rows = await db.select().from(blogs).where(eq(blogs.id, id)).limit(1);
+    return rows[0];
+  }
+
+  async getBlogBySlug(slug: string) {
+    const rows = await db.select().from(blogs).where(eq(blogs.slug, slug)).limit(1);
+    return rows[0];
+  }
+
+  async getAllBlogs() {
+    return db.select().from(blogs).orderBy(desc(blogs.createdAt));
+  }
+
+  async getPublishedBlogs() {
+    return db.select().from(blogs)
+      .where(eq(blogs.isPublished, true))
+      .orderBy(desc(blogs.publishedAt));
+  }
+
+  async createBlog(blogData: InsertBlog) {
+    const rows = await db.insert(blogs).values(blogData).returning();
+    return rows[0];
+  }
+
+  async updateBlog(id: string, updates: Partial<Blog>) {
+    const rows = await db.update(blogs)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(blogs.id, id))
+      .returning();
+    return rows[0];
+  }
+
+  async deleteBlog(id: string) {
+    const res = await db.delete(blogs).where(eq(blogs.id, id));
+    return res.rowCount ? res.rowCount > 0 : true;
+  }
+
+  async incrementBlogViews(id: string) {
+    await db.update(blogs)
+      .set({ views: dsql`${blogs.views} + 1` })
+      .where(eq(blogs.id, id));
+  }
+
+
+  // Campaign Products
+  async getCampaignProducts(campaignId: string) {
+    const rows = await db
+      .select({
+        campaignProduct: campaignProducts,
+        product: products,
+      })
+      .from(campaignProducts)
+      .where(eq(campaignProducts.campaignId, campaignId))
+      .innerJoin(products, eq(campaignProducts.productId, products.id));
+    
+    return rows.map(row => ({
+      product: row.product,
+      campaignProduct: row.campaignProduct,
+    }));
+  }
+
+  async addProductToCampaign(campaignId: string, productId: string) {
+    // Check if already exists
+    const existing = await db
+      .select()
+      .from(campaignProducts)
+      .where(
+        and(
+          eq(campaignProducts.campaignId, campaignId),
+          eq(campaignProducts.productId, productId)
+        )
+      )
+      .limit(1);
+    
+    if (existing[0]) {
+      return existing[0];
+    }
+    
+    const rows = await db
+      .insert(campaignProducts)
+      .values({ campaignId, productId })
+      .returning();
+    return rows[0];
+  }
+
+  async removeProductFromCampaign(campaignProductId: string) {
+    const res = await db.delete(campaignProducts).where(eq(campaignProducts.id, campaignProductId));
+    return res.rowCount ? res.rowCount > 0 : true;
+  }
+
+  async getProductCampaigns(productId: string) {
+    const rows = await db
+      .select({
+        campaign: campaigns,
+      })
+      .from(campaignProducts)
+      .where(eq(campaignProducts.productId, productId))
+      .innerJoin(campaigns, eq(campaignProducts.campaignId, campaigns.id));
+    
+    return rows.map(row => row.campaign);
+  }
+
   // Products with categories
   async getProduct(id: string) {
     const rows = await db.select().from(products).where(eq(products.id, id)).limit(1);
@@ -124,7 +287,12 @@ class DrizzleStorage implements IStorage {
     return db
       .select()
       .from(products)
-      .where(and(eq(products.categoryId, categoryId), eq(products.isActive, true)))
+      .where(
+        and(
+          eq(products.isActive, true),
+          dsql`${categoryId} = ANY(${products.categoryIds})`
+        )
+      )
       .orderBy(desc(products.createdAt));
   }
 
@@ -143,7 +311,6 @@ class DrizzleStorage implements IStorage {
     return res.rowCount ? res.rowCount > 0 : true;
   }
 
-  // ... rest of the existing methods remain the same
   async getEmployee(id: string) {
     const rows = await db.select().from(employees).where(eq(employees.id, id)).limit(1);
     return rows[0];

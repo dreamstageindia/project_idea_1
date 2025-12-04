@@ -15,6 +15,9 @@ import { SessionTimer } from "@/components/session/session-timer";
 import Landing from "./pages/landing";
 import Home from "./pages/home";
 import OccasionalCampaigns from "./pages/occasional-campaigns";
+import BlogPage from "./pages/blog";
+import BlogDetailPage from "./pages/blog-detail";
+import CSRSupportPage from "./pages/csr-support";
 
 function Routes() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -59,6 +62,16 @@ function Routes() {
       <Route path="/special-occasions">
         {isAuthenticated ? <OccasionalCampaigns /> : <Login />}
       </Route>
+
+      <Route path="/csr">
+        {isAuthenticated ? <CSRSupportPage /> : <Login />}
+      </Route>
+
+
+      // Blogs should be PUBLIC 
+      <Route path="/blog" component={BlogPage} />
+      <Route path="/blog/:slug" component={BlogDetailPage} />
+
 
       <Route path="/">
         <Landing />

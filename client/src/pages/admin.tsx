@@ -6,7 +6,9 @@ import { EmployeesSection } from "@/components/admin/sections/employees-section"
 import { ProductsSection } from "@/components/admin/sections/products-section";
 import { OrdersSection } from "@/components/admin/sections/orders-section";
 import { BrandingSection } from "@/components/admin/sections/branding-section";
+import { CampaignsSection } from "@/components/admin/sections/campaigns-section";
 import { useToast } from "@/hooks/use-toast";
+import { BlogsSection } from "@/components/admin/sections/blogs-section";
 
 const ADMIN_PASSWORD = "12345678";
 
@@ -63,8 +65,12 @@ export default function Admin() {
         return <EmployeesSection />;
       case "products":
         return <ProductsSection />;
+      case "campaigns": 
+        return <CampaignsSection />;
       case "orders":
         return <OrdersSection />;
+      case "blogs":
+        return <BlogsSection />;
       case "branding":
         return <BrandingSection />;
       default:

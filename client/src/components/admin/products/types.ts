@@ -1,14 +1,24 @@
+import type { Category } from "@/components/admin/categories/types";
+import type { Campaign } from "@/components/admin/campaigns/types";
+
 export type Product = {
-    id: string;
-    name: string;
-    price: string;
-    images: string[];
-    colors: string[];
-    stock: number;
-    packagesInclude: string[];
-    specifications: Record<string, string>;
-    sku: string;
-    isActive: boolean;
-    backupProductId: string | null;
-    createdAt: string;
-  };
+  id: string;
+  name: string;
+  price: string;
+  images: string[];
+  colors: string[];
+  stock: number;
+  packagesInclude: string[];
+  specifications: Record<string, string> | string;
+  sku: string;
+  isActive: boolean;
+  backupProductId: string | null;
+  csrSupport: boolean; // Add this
+  createdAt: string;
+  categoryIds: string[];
+  categories?: Category[];
+  category?: Category | null;
+  isBackup?: boolean;
+  originalProductId?: string | null;
+  campaigns?: Campaign[];
+};

@@ -5,11 +5,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Trash } from "lucide-react";
+import { Trash, Tag } from "lucide-react";
 import { ProductEditModal } from "./product-edit-modal";
 import { useState } from "react";
 import type { Product } from "./types";
 import type { Category } from "@/components/admin/categories/types";
+import type { Campaign } from "@/components/admin/campaigns/types";
 
 export function ProductsTable() {
   const { toast } = useToast();
@@ -22,6 +23,11 @@ export function ProductsTable() {
     queryKey: ["/api/categories"] 
   });
   
+  // Get campaigns for each product
+  const { data: productCampaignsData = {} } = useQuery<Record<string, Campaign[]>>({ 
+    queryKey: ["/api/admin/product-campaigns"] 
+  });
+  
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
@@ -32,6 +38,7 @@ export function ProductsTable() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/products-admin"] });
+      qc.invalidateQueries({ queryKey: ["/api/admin/product-campaigns"] });
       toast({ title: "Product deleted" });
     },
     onError: (e: any) => toast({ 
@@ -57,10 +64,15 @@ export function ProductsTable() {
     return p ? `${p.name} (${p.sku})` : "—";
   };
 
-  const getCategoryName = (categoryId: string | null | undefined) => {
-    if (!categoryId) return "—";
-    const category = categories.find((c) => c.id === categoryId);
-    return category ? category.name : "—";
+  const resolveProductCategories = (product: Product) => {
+    if (product.categories?.length) return product.categories;
+    const ids = product.categoryIds ?? [];
+    if (!ids.length) return [];
+    return categories.filter((category) => ids.includes(category.id));
+  };
+
+  const getProductCampaigns = (productId: string) => {
+    return productCampaignsData[productId] || [];
   };
 
   return (
@@ -78,47 +90,83 @@ export function ProductsTable() {
                   <TableHead>SKU</TableHead>
                   <TableHead>Price</TableHead>
                   <TableHead>Stock</TableHead>
-                  <TableHead>Category</TableHead>
+                  <TableHead>Categories</TableHead>
+                  <TableHead>Campaigns</TableHead>
                   <TableHead>Backup</TableHead>
                   <TableHead>Active</TableHead>
                   <TableHead className="w-[260px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {products.map((p) => (
-                  <TableRow key={p.id}>
-                    <TableCell>{p.name}</TableCell>
-                    <TableCell className="font-mono">{p.sku}</TableCell>
-                    <TableCell>₹{p.price}</TableCell>
-                    <TableCell>{p.stock}</TableCell>
-                    <TableCell>{getCategoryName(p.categoryId)}</TableCell>
-                    <TableCell>{labelForProduct(p.backupProductId)}</TableCell>
-                    <TableCell>
-                      <Badge variant={p.isActive ? "default" : "destructive"}>
-                        {p.isActive ? "Yes" : "No"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openEditModal(p)}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => deleteProductMutation.mutate(p.id)}
-                        >
-                          <Trash className="h-4 w-4 mr-1" />
-                          Delete
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {products.map((p) => {
+                  const productCampaigns = getProductCampaigns(p.id);
+                  return (
+                    <TableRow key={p.id}>
+                      <TableCell>{p.name}</TableCell>
+                      <TableCell className="font-mono">{p.sku}</TableCell>
+                      <TableCell>₹{p.price}</TableCell>
+                      <TableCell>{p.stock}</TableCell>
+                      <TableCell>
+                        {(() => {
+                          const assigned = resolveProductCategories(p);
+                          if (!assigned.length) return "—";
+                          return (
+                            <div className="flex flex-wrap gap-1">
+                              {assigned.map((category) => (
+                                <Badge key={`${p.id}-${category.id}`} variant="outline">
+                                  {category.name}
+                                </Badge>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </TableCell>
+                      <TableCell>
+                        {productCampaigns.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {productCampaigns.map((campaign) => (
+                              <Badge 
+                                key={`${p.id}-${campaign.id}`} 
+                                variant="secondary"
+                                className="flex items-center gap-1"
+                              >
+                                <Tag className="h-3 w-3" />
+                                {campaign.name}
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : (
+                          "—"
+                        )}
+                      </TableCell>
+                      <TableCell>{labelForProduct(p.backupProductId)}</TableCell>
+                      <TableCell>
+                        <Badge variant={p.isActive ? "default" : "destructive"}>
+                          {p.isActive ? "Yes" : "No"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openEditModal(p)}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => deleteProductMutation.mutate(p.id)}
+                          >
+                            <Trash className="h-4 w-4 mr-1" />
+                            Delete
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>

@@ -47,17 +47,17 @@ export default function Home() {
     },
     {
       id: "bulk-buy",
-      title: "Bulk Buy",
-      description: "Corporate bulk purchasing options",
+      title: "Blogs",
+      description: "Blogs",
       position: "bottom-left",
-      path: "/bulk-buy"
+      path: "/blog"
     },
     {
       id: "csr-blog",
-      title: "CSR Support / Blog",
+      title: "CSR Support",
       description: "Corporate social responsibility & insights",
       position: "bottom-right",
-      path: "/csr-blog"
+      path: "/csr"
     }
   ];
 
