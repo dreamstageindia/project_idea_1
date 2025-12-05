@@ -4,23 +4,47 @@ import { Footer } from "@/components/layout/footer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Package, Users, Heart, Globe, Shield } from "lucide-react";
-
-type Product = {
-  id: string;
-  name: string;
-  price: string;
-  images: string[];
-  colors: string[];
-  stock: number;
-  packagesInclude: string[];
-  specifications: Record<string, string>;
-  sku: string;
-  csrSupport: boolean;
-  categoryIds: string[];
-  categories?: Array<{ id: string; name: string }>;
-};
+import type { Product } from "@/types/product";
 
 function CSRProductCard({ product }: { product: Product }) {
+  // Parse specifications if they come as a string
+  const parsedSpecifications = (() => {
+    if (!product.specifications) return {};
+    
+    if (typeof product.specifications === 'string') {
+      try {
+        // Try to parse as JSON first
+        const parsed = JSON.parse(product.specifications);
+        return typeof parsed === 'object' ? parsed : {};
+      } catch {
+        // If not valid JSON, try to parse as key-value pairs
+        const specs: Record<string, string> = {};
+        const lines = product.specifications.split('\n');
+        
+        lines.forEach(line => {
+          const trimmedLine = line.trim();
+          if (trimmedLine) {
+            const colonIndex = trimmedLine.indexOf(':');
+            if (colonIndex > 0) {
+              const key = trimmedLine.substring(0, colonIndex).trim();
+              const value = trimmedLine.substring(colonIndex + 1).trim();
+              if (key) {
+                specs[key] = value;
+              }
+            } else {
+              // If no colon, treat the whole line as a specification
+              specs[trimmedLine] = '';
+            }
+          }
+        });
+        return specs;
+      }
+    }
+    
+    // Already an object
+    return product.specifications;
+  })();
+
   return (
     <Card className="overflow-hidden hover:shadow-lg transition-shadow border-green-100">
       <div className="relative">
@@ -53,19 +77,19 @@ function CSRProductCard({ product }: { product: Product }) {
       <CardContent>
         <div className="space-y-4">
           {/* Specifications */}
-          {product.specifications && Object.keys(product.specifications).length > 0 && (
+          {Object.keys(parsedSpecifications).length > 0 && (
             <div>
               <h4 className="font-medium text-gray-900 mb-2">Specifications</h4>
-              <div className="space-y-1">
-                {Object.entries(product.specifications).slice(0, 3).map(([key, value]) => (
-                  <div key={key} className="flex justify-between text-sm">
-                    <span className="text-gray-600">{key}:</span>
-                    <span className="text-gray-900 font-medium">{value}</span>
+              <div className="space-y-2">
+                {Object.entries(parsedSpecifications).slice(0, 3).map(([key, value]) => (
+                  <div key={key} className="text-sm">
+                    <span className="text-gray-600 font-medium">{key}:</span>
+                    {value && <span className="text-gray-900 ml-2">{value}</span>}
                   </div>
                 ))}
-                {Object.keys(product.specifications).length > 3 && (
+                {Object.keys(parsedSpecifications).length > 3 && (
                   <div className="text-sm text-gray-500 text-center pt-1">
-                    +{Object.keys(product.specifications).length - 3} more specifications
+                    +{Object.keys(parsedSpecifications).length - 3} more specifications
                   </div>
                 )}
               </div>

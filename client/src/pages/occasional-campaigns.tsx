@@ -1,12 +1,12 @@
 // src/pages/occasional-campaigns.tsx
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { Header } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import { CheckCircle, Calendar, Users, Gift, Package, ShoppingCart, X } from "lucide-react";
+import { CheckCircle, Calendar, Users, Gift, Package, ShoppingCart, X, Image as ImageIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -33,6 +33,8 @@ type Product = {
   categoryIds: string[];
   categories?: Array<{ id: string; name: string }>;
   isActive: boolean;
+  specifications?: string;
+  packagesInclude?: string[];
 };
 
 type Branding = {
@@ -91,7 +93,7 @@ function CampaignCard({
             alt={campaign.name}
             className="w-full h-48 object-cover"
             onError={(e) => {
-              (e.target as HTMLImageElement).src = "https://placehold.co/600x400?text=No+Image";
+              (e.target as HTMLImageElement).src = "https://placehold.co/600x400/f0f9ff/2563eb?text=Campaign";
             }}
           />
         ) : (
@@ -112,7 +114,9 @@ function CampaignCard({
       
       <div className="p-6">
         <h3 className="text-xl font-bold text-gray-900 mb-2">{campaign.name}</h3>
-        <p className="text-gray-600 mb-4 line-clamp-2">{campaign.description || "No description provided"}</p>
+        <div className="text-gray-600 mb-4 line-clamp-2 whitespace-pre-wrap">
+          {campaign.description || "No description provided"}
+        </div>
         
         <div className="flex items-center justify-between text-sm text-gray-500 mb-3">
           <div className="flex items-center gap-1">
@@ -128,7 +132,7 @@ function CampaignCard({
         <Button
           className={`w-full mt-4 ${
             isSelected 
-              ? 'bg-blue-600 hover:bg-blue-700' 
+              ? 'bg-blue-600 hover:bg-blue-700 text-white' 
               : isActiveCampaign 
                 ? 'bg-gray-100 text-gray-900 hover:bg-gray-200' 
                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
@@ -157,6 +161,18 @@ function ProductCard({
   onAddToCart: (product: Product) => void;
   isAddingToCart: boolean;
 }) {
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+
+  // Handle image error
+  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+    e.currentTarget.src = "https://placehold.co/600x400/f8fafc/64748b?text=No+Image";
+    e.currentTarget.className = "w-full h-48 object-contain bg-gray-100";
+  };
+
+  const mainImage = product.images && product.images.length > 0 
+    ? product.images[selectedImageIndex] 
+    : null;
+
   return (
     <div 
       className={`bg-white rounded-xl border-2 overflow-hidden transition-all duration-300 ${
@@ -165,19 +181,41 @@ function ProductCard({
           : 'border-gray-200 hover:border-gray-300'
       }`}
     >
+      {/* Product Images */}
       <div className="relative">
-        {product.images && product.images.length > 0 ? (
-          <img
-            src={product.images[0]}
-            alt={product.name}
-            className="w-full h-48 object-cover"
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = "https://placehold.co/600x400?text=No+Image";
-            }}
-          />
+        {mainImage ? (
+          <div className="w-full h-64 bg-gray-50">
+            <img
+              src={mainImage}
+              alt={product.name}
+              className="w-full h-full object-contain p-4"
+              onError={handleImageError}
+            />
+            {/* Image indicator dots */}
+            {product.images && product.images.length > 1 && (
+              <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-2">
+                {product.images.map((_, idx) => (
+                  <button
+                    key={idx}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedImageIndex(idx);
+                    }}
+                    className={`w-2 h-2 rounded-full transition-all ${
+                      selectedImageIndex === idx 
+                        ? 'bg-blue-600 scale-125' 
+                        : 'bg-gray-300 hover:bg-gray-400'
+                    }`}
+                    aria-label={`View image ${idx + 1}`}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         ) : (
-          <div className="w-full h-48 bg-gradient-to-r from-gray-100 to-gray-200 flex items-center justify-center">
-            <Package className="w-16 h-16 text-gray-300" />
+          <div className="w-full h-64 bg-gradient-to-r from-gray-100 to-gray-200 flex flex-col items-center justify-center p-4">
+            <ImageIcon className="w-16 h-16 text-gray-300 mb-4" />
+            <p className="text-gray-400 text-sm text-center">No image available</p>
           </div>
         )}
         <div className="absolute top-4 right-4">
@@ -189,14 +227,23 @@ function ProductCard({
       
       <div className="p-4">
         <div className="flex justify-between items-start mb-2">
-          <div>
-            <h4 className="font-bold text-gray-900 mb-1">{product.name}</h4>
+          <div className="flex-1">
+            <h4 className="font-bold text-gray-900 mb-1 line-clamp-1">{product.name}</h4>
             <p className="text-sm text-gray-500 mb-2">{product.sku}</p>
           </div>
-          <div className="text-lg font-bold text-blue-600">
+          <div className="text-lg font-bold text-blue-600 whitespace-nowrap ml-2">
             ₹{parseFloat(product.price).toFixed(2)}
           </div>
         </div>
+        
+        {/* Product Description */}
+        {product.specifications && (
+          <div className="mb-3">
+            <p className="text-xs text-gray-500 mb-1 line-clamp-2 whitespace-pre-wrap">
+              {product.specifications}
+            </p>
+          </div>
+        )}
         
         {product.categories && product.categories.length > 0 && (
           <div className="flex flex-wrap gap-1 mb-3">
@@ -215,14 +262,15 @@ function ProductCard({
         
         {product.colors && product.colors.length > 0 && (
           <div className="mb-3">
-            <p className="text-sm text-gray-600 mb-1">Available Colors:</p>
+            <p className="text-xs text-gray-600 mb-1">Colors:</p>
             <div className="flex flex-wrap gap-1">
               {product.colors.slice(0, 3).map((color, idx) => (
                 <span 
                   key={idx}
                   className="px-2 py-1 text-xs bg-gray-100 rounded"
+                  title={color}
                 >
-                  {color}
+                  {color.length > 10 ? `${color.substring(0, 8)}...` : color}
                 </span>
               ))}
               {product.colors.length > 3 && (
@@ -247,7 +295,7 @@ function ProductCard({
                 Selected
               </>
             ) : (
-              'Select Product'
+              'Select'
             )}
           </Button>
           <Button
@@ -342,9 +390,11 @@ function ProductsModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
       <div className="bg-white rounded-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
         <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">{campaign.name}</h2>
-            <p className="text-gray-600">{campaign.description}</p>
+          <div className="flex-1">
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">{campaign.name}</h2>
+            <div className="text-gray-600 whitespace-pre-wrap">
+              {campaign.description || "No description provided"}
+            </div>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose}>
             <X className="w-5 h-5" />
@@ -388,7 +438,7 @@ function ProductsModal({
               {selectedProduct && (
                 <div className="mt-8 p-4 bg-green-50 border border-green-200 rounded-xl">
                   <div className="flex items-center justify-between">
-                    <div>
+                    <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <CheckCircle className="w-5 h-5 text-green-600" />
                         <span className="font-semibold text-green-800">Product Selected</span>
@@ -397,15 +447,20 @@ function ProductsModal({
                         You've selected <span className="font-bold">{selectedProduct.name}</span> 
                         for ₹{parseFloat(selectedProduct.price).toFixed(2)}
                       </p>
+                      {selectedProduct.specifications && (
+                        <p className="text-green-600 text-sm mt-1 line-clamp-1">
+                          {selectedProduct.specifications}
+                        </p>
+                      )}
                     </div>
                     <Button
                       variant="default"
-                      className="bg-green-600 hover:bg-green-700"
+                      className="bg-green-600 hover:bg-green-700 whitespace-nowrap"
                       onClick={() => onAddToCart(selectedProduct)}
                       disabled={isAddingToCart}
                     >
                       <ShoppingCart className="w-4 h-4 mr-2" />
-                      {isAddingToCart ? 'Processing...' : 'Order Now'}
+                      {isAddingToCart ? 'Processing...' : 'Add to Cart'}
                     </Button>
                   </div>
                 </div>
@@ -597,7 +652,9 @@ export default function OccasionalCampaigns() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-gray-600 mb-4">{selectedCampaign.description}</p>
+                  <div className="text-gray-600 mb-4 whitespace-pre-wrap">
+                    {selectedCampaign.description || "No description provided"}
+                  </div>
                   <div className="flex items-center gap-4 text-sm text-gray-500">
                     <div className="flex items-center gap-1">
                       <Calendar className="w-4 h-4" />
