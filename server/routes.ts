@@ -1259,4 +1259,35 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.status(500).json({ message: "Error deleting blog", details: error.message });
     }
   });
+
+  // In your backend routes (registerRoutes function)
+// Add this endpoint to get all campaign products
+app.get("/api/admin/all-campaign-products", async (_req, res) => {
+  try {
+    // Get all campaigns
+    const campaigns = await storage.getAllCampaigns();
+    const allCampaignProducts: any[] = [];
+    
+    // For each campaign, get its products
+    for (const campaign of campaigns) {
+      if (campaign.isActive) {
+        const campaignProducts = await storage.getCampaignProducts(campaign.id);
+        allCampaignProducts.push(...campaignProducts);
+      }
+    }
+    
+    // Remove duplicates (same product might be in multiple campaigns)
+    const uniqueProducts = new Map();
+    allCampaignProducts.forEach(cp => {
+      if (!uniqueProducts.has(cp.product.id)) {
+        uniqueProducts.set(cp.product.id, cp);
+      }
+    });
+    
+    res.json(Array.from(uniqueProducts.values()));
+  } catch (error: any) {
+    console.error("Error fetching all campaign products:", error);
+    res.status(500).json({ message: "Error fetching campaign products", details: error.message });
+  }
+});
 }

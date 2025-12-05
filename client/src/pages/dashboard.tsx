@@ -9,7 +9,7 @@ import { ProductDetailModal } from "@/components/product/product-detail-modal";
 import { ConfirmationModal } from "@/components/admin/orders/confirmation-modal";
 import { OrderConfirmationModal } from "@/components/admin/orders/order-confirmation-modal";
 import { useAuth } from "@/hooks/use-auth";
-import { CheckCircle, X, ShoppingCart } from "lucide-react";
+import { CheckCircle, X, ShoppingCart, Tag } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { SiApple, SiSamsung, SiSony, SiNike, SiAdidas, SiPuma } from "react-icons/si";
@@ -39,7 +39,7 @@ type Product = {
   colors: string[];
   stock: number;
   packagesInclude?: string[];
-  specifications?: Record<string, string>;
+  specifications?: string;
   sku?: string;
   isActive?: boolean;
   backupProductId?: string | null;
@@ -63,6 +63,17 @@ type Category = {
   isActive?: boolean;
   sortOrder?: number;
   createdAt?: string;
+};
+
+// Add CampaignProduct type
+type CampaignProduct = {
+  campaignProduct: {
+    id: string;
+    campaignId: string;
+    productId: string;
+    createdAt: string;
+  };
+  product: Product;
 };
 
 // Brands Showcase Component
@@ -316,6 +327,17 @@ export default function Dashboard() {
     queryKey: ["/api/categories"],
   });
 
+  // Fetch all campaign products
+  const { data: campaignProducts = [] } = useQuery<CampaignProduct[]>({
+    queryKey: ["/api/admin/campaign-products"],
+    // Create a new endpoint to get all campaign products
+    queryFn: async () => {
+      const response = await fetch("/api/admin/all-campaign-products");
+      if (!response.ok) throw new Error("Failed to fetch campaign products");
+      return response.json();
+    },
+  });
+
   const companyName = branding?.companyName || "TechCorp";
   const primary = branding?.primaryColor || "#1e40af";
   const accent = branding?.accentColor || "#f97316";
@@ -335,6 +357,11 @@ export default function Dashboard() {
 
   const reachedLimit = maxSelections !== -1 && myOrders.length >= maxSelections;
 
+  // Get all product IDs that are in campaigns
+  const campaignProductIds = useMemo(() => {
+    return campaignProducts.map(cp => cp.product.id);
+  }, [campaignProducts]);
+
   const displayProducts = useMemo(() => {
     const list = products as Product[];
     const originalsToHide = new Set(
@@ -345,6 +372,9 @@ export default function Dashboard() {
       .filter((p) => {
         if (!p.stock || p.stock <= 0) return false;
         if (!p.isBackup && originalsToHide.has(p.id)) return false;
+        
+        // Filter out products that are in campaigns
+        if (campaignProductIds.includes(p.id)) return false;
         
         // Filter by category
         if (selectedCategory !== "all") {
@@ -362,7 +392,7 @@ export default function Dashboard() {
       }));
 
     return filteredList;
-  }, [products, inrPerPoint, selectedCategory]);
+  }, [products, campaignProductIds, inrPerPoint, selectedCategory]);
 
   const addToCartMutation = useMutation({
     mutationFn: async (data: { productId: string; selectedColor: string | null; quantity: number }) => {
@@ -554,6 +584,7 @@ export default function Dashboard() {
               
               {/* Products Grid */}
               <main className="flex-1">
+                
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6 mb-8">
                   {displayProducts.length > 0 ? (
                     displayProducts.map((product) => (
@@ -568,11 +599,13 @@ export default function Dashboard() {
                     <div className="col-span-full text-center py-12">
                       <ShoppingCart className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
                       <h3 className="text-lg font-semibold text-muted-foreground mb-2">
-                        No products found
+                        {campaignProducts.length > 0 
+                          ? "All regular products are in campaigns" 
+                          : "No products found"}
                       </h3>
                       <p className="text-muted-foreground">
                         {selectedCategory === "all" 
-                          ? "No products available at the moment." 
+                          ? "Check the Campaigns section for exclusive offers!" 
                           : "No products found in this category."}
                       </p>
                     </div>
@@ -591,8 +624,6 @@ export default function Dashboard() {
                   </div>
                 )}
               </main>
-              
-              
             </div>
           </div>
 
@@ -673,5 +704,4 @@ export default function Dashboard() {
       </SimplePrompt>
     </div>
   );
-}
-
+} 

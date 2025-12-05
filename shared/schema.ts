@@ -66,7 +66,7 @@ export const products = pgTable("products", {
   colors: json("colors").$type<string[]>().default([]),
   stock: integer("stock").default(0),
   packagesInclude: json("packages_include").$type<string[]>().default([]),
-  specifications: json("specifications").$type<Record<string, string>>().default({}),
+  specifications: text("specifications").default(""), // CHANGED: from JSON to TEXT
   sku: text("sku").notNull().unique(),
   isActive: boolean("is_active").default(true),
   backupProductId: varchar("backup_product_id"),
@@ -225,7 +225,7 @@ export const insertProductSchema = z.object({
   colors: z.array(z.string()).default([]),
   stock: z.number().int().min(0).default(0),
   packagesInclude: z.array(z.string()).default([]),
-  specifications: z.record(z.string(), z.string()).default({}),
+  specifications: z.string().default(""), // CHANGED: from object to string
   sku: z.string().min(1, "SKU is required"),
   isActive: z.boolean().default(true),
   backupProductId: z.string().nullable().default(null),

@@ -19,10 +19,10 @@ const defaultNewProduct: Partial<Product> = {
   colors: [],
   stock: 0,
   packagesInclude: [],
-  specifications: {},
+  specifications: "",
   sku: "",
   isActive: true,
-  csrSupport: false, // Added CSR Support default
+  csrSupport: false,
   backupProductId: null,
   categoryIds: [],
 };
@@ -66,25 +66,6 @@ export function ProductCreate() {
     }),
   });
 
-  // Parse specifications from text input to object
-  const parseSpecifications = (input: string): Record<string, string> => {
-    const obj: Record<string, string> = {};
-    if (!input.trim()) return obj;
-    
-    input.split("\n").forEach((line) => {
-      const trimmedLine = line.trim();
-      if (!trimmedLine) return;
-      
-      const idx = trimmedLine.indexOf(":");
-      if (idx > 0) {
-        const key = trimmedLine.slice(0, idx).trim();
-        const value = trimmedLine.slice(idx + 1).trim();
-        if (key) obj[key] = value;
-      }
-    });
-    return obj;
-  };
-
   const toggleCategorySelection = (categoryId: string) => {
     setNewProduct((prev) => {
       const current = prev.categoryIds ?? [];
@@ -118,11 +99,11 @@ export function ProductCreate() {
       categoryIds: newProduct.categoryIds ?? [],
       backupProductId: newProduct.backupProductId || null,
       isActive: newProduct.isActive !== false,
-      csrSupport: newProduct.csrSupport || false, // Added CSR Support
+      csrSupport: newProduct.csrSupport || false,
       images: newProductImages,
       colors: colorsInput.split(",").map(s => s.trim()).filter(Boolean),
-      packagesInclude: packagesInput.split("\n").map(s => s.trim()).filter(Boolean),
-      specifications: parseSpecifications(specificationsInput),
+      packagesInclude: packagesInput.split("\n").filter(Boolean),
+      specifications: specificationsInput.trim(),
     };
 
     console.log("Final product data to submit:", productData);
@@ -313,16 +294,16 @@ export function ProductCreate() {
 
           {/* Specifications */}
           <div className="md:col-span-2">
-            <Label htmlFor="product-specifications">Specifications (key:value, one per line)</Label>
+            <Label htmlFor="product-specifications">Specifications (plain text with line breaks)</Label>
             <Textarea
               id="product-specifications"
               value={specificationsInput}
               onChange={(e) => setSpecificationsInput(e.target.value)}
-              placeholder="Weight: 2kg&#10;Dimensions: 10x20x5cm&#10;Material: Plastic"
+              placeholder="Enter detailed specifications here...&#10;You can use multiple lines&#10;And any format you want"
               rows={4}
             />
             <p className="text-sm text-muted-foreground mt-1">
-              Format: Key: Value (one specification per line)
+              Enter specifications as plain text. Each line will be preserved.
             </p>
           </div>
 

@@ -45,7 +45,7 @@ export function ProductEditModal({ open, onClose, product, products, categories 
         sku: product.sku,
         stock: product.stock,
         isActive: product.isActive,
-        csrSupport: product.csrSupport || false, // Added CSR Support
+        csrSupport: product.csrSupport || false,
         backupProductId: product.backupProductId,
         categoryIds: product.categoryIds || [],
       });
@@ -53,19 +53,12 @@ export function ProductEditModal({ open, onClose, product, products, categories 
       setColorsInput((product.colors || []).join(", "));
       setPackagesInput((product.packagesInclude || []).join("\n"));
       
-      // Format specifications for textarea
-      if (product.specifications && typeof product.specifications === 'object') {
-        const specObj = product.specifications as Record<string, string>;
-        setSpecificationsInput(
-          Object.entries(specObj)
-            .map(([key, value]) => `${key}: ${value}`)
-            .join("\n")
-        );
-      } else if (typeof product.specifications === 'string') {
-        setSpecificationsInput(product.specifications);
-      } else {
-        setSpecificationsInput("");
-      }
+      // Directly use specifications as string
+      setSpecificationsInput(
+        typeof product.specifications === 'string' 
+          ? product.specifications 
+          : JSON.stringify(product.specifications || "", null, 2)
+      );
       
       setSelectedCategoryIds(product.categoryIds || []);
     }
@@ -99,24 +92,6 @@ export function ProductEditModal({ open, onClose, product, products, categories 
     );
   };
 
-  const parseSpecifications = (input: string): Record<string, string> => {
-    const obj: Record<string, string> = {};
-    if (!input.trim()) return obj;
-    
-    input.split("\n").forEach((line) => {
-      const trimmedLine = line.trim();
-      if (!trimmedLine) return;
-      
-      const idx = trimmedLine.indexOf(":");
-      if (idx > 0) {
-        const key = trimmedLine.slice(0, idx).trim();
-        const value = trimmedLine.slice(idx + 1).trim();
-        if (key) obj[key] = value;
-      }
-    });
-    return obj;
-  };
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -137,11 +112,11 @@ export function ProductEditModal({ open, onClose, product, products, categories 
       categoryIds: selectedCategoryIds,
       backupProductId: formData.backupProductId || null,
       isActive: formData.isActive !== false,
-      csrSupport: formData.csrSupport || false, // Added CSR Support
+      csrSupport: formData.csrSupport || false,
       images: images,
       colors: colorsInput.split(",").map(s => s.trim()).filter(Boolean),
-      packagesInclude: packagesInput.split("\n").map(s => s.trim()).filter(Boolean),
-      specifications: parseSpecifications(specificationsInput),
+      packagesInclude: packagesInput.split("\n").filter(Boolean),
+      specifications: specificationsInput.trim(),
     };
 
     updateProductMutation.mutate(productData);
@@ -353,16 +328,16 @@ export function ProductEditModal({ open, onClose, product, products, categories 
 
             {/* Specifications */}
             <div className="md:col-span-2">
-              <Label htmlFor="edit-specifications">Specifications (key:value, one per line)</Label>
+              <Label htmlFor="edit-specifications">Specifications (plain text with line breaks)</Label>
               <Textarea
                 id="edit-specifications"
                 value={specificationsInput}
                 onChange={(e) => setSpecificationsInput(e.target.value)}
-                placeholder="Weight: 2kg&#10;Dimensions: 10x20x5cm&#10;Material: Plastic"
+                placeholder="Enter detailed specifications here...&#10;You can use multiple lines&#10;And any format you want"
                 rows={4}
               />
               <p className="text-sm text-muted-foreground mt-1">
-                Format: Key: Value (one specification per line)
+                Enter specifications as plain text. Each line will be preserved.
               </p>
             </div>
 
