@@ -269,6 +269,19 @@ export async function registerRoutes(app: Express): Promise<void> {
       const categoryMap = buildCategoryMap(categories);
       const enriched = all.map((product) => attachCategoriesToProduct(product, categoryMap));
       
+      // Get all campaign product IDs
+      const campaigns = await storage.getAllCampaigns();
+      const campaignProductIds = new Set<string>();
+      
+      for (const campaign of campaigns) {
+        if (campaign.isActive) {
+          const campaignProducts = await storage.getCampaignProducts(campaign.id);
+          campaignProducts.forEach(cp => {
+            campaignProductIds.add(cp.product.id);
+          });
+        }
+      }
+      
       const byId = new Map(enriched.map((p) => [p.id, p]));
       const backupCandidateIds = new Set(
         enriched
@@ -280,11 +293,18 @@ export async function registerRoutes(app: Express): Promise<void> {
       
       for (const orig of originals) {
         const origStock = Number(orig.stock || 0);
+        
+        // Skip products that are in active campaigns
+        if (campaignProductIds.has(orig.id)) {
+          continue;
+        }
+        
         if (origStock > 0) {
           visible.push(orig);
         } else if (origStock <= 0 && orig.backupProductId) {
           const backup = byId.get(orig.backupProductId);
-          if (backup && Number(backup.stock || 0) > 0 && backup.isActive !== false) {
+          // Also check if backup product is in a campaign
+          if (backup && Number(backup.stock || 0) > 0 && backup.isActive !== false && !campaignProductIds.has(backup.id)) {
             visible.push({
               ...backup,
               isBackup: true,
@@ -479,7 +499,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // Orders API
+  // Orders API with delivery support
   app.post("/api/orders", async (req, res) => {
     try {
       const token = req.headers.authorization?.replace("Bearer ", "");
@@ -490,6 +510,8 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (!employee) return res.status(404).json({ message: "Employee not found" });
       const branding = await storage.getBranding();
       const maxSelections = branding?.maxSelectionsPerUser ?? 1;
+
+      const { deliveryMethod = "office", deliveryAddress = null } = req.body;
 
       const cartItems = await storage.getCartItems(session.employeeId);
       if (cartItems.length === 0) return res.status(400).json({ message: "Cart is empty" });
@@ -524,7 +546,11 @@ export async function registerRoutes(app: Express): Promise<void> {
           productId: item.productId,
           selectedColor: item.selectedColor,
           quantity: item.quantity,
-          metadata: { usedPoints: Math.ceil(parseFloat(p!.price) / inrPerPoint) * item.quantity },
+          metadata: { 
+            usedPoints: Math.ceil(parseFloat(p!.price) / inrPerPoint) * item.quantity,
+            deliveryMethod,
+            deliveryAddress,
+          },
         });
         orders.push({ order, product: p });
       }
@@ -540,7 +566,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // PhonePe Payment Routes
+  // PhonePe Payment Routes with delivery support
   app.post("/api/orders/create-copay-order", async (req, res) => {
     try {
       const token = req.headers.authorization?.replace("Bearer ", "");
@@ -549,6 +575,8 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (!session) return res.status(401).json({ message: "Invalid session" });
       const employee = await storage.getEmployee(session.employeeId);
       if (!employee) return res.status(404).json({ message: "Employee not found" });
+
+      const { deliveryMethod = "office", deliveryAddress = null } = req.body;
 
       const cartItems = await storage.getCartItems(session.employeeId);
       if (cartItems.length === 0) return res.status(400).json({ message: "Cart is empty" });
@@ -590,6 +618,13 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
 
       const merchantTransactionId = `TXN_${Date.now()}`;
+      
+      // Store delivery info in session or pass in callback URL
+      const callbackUrl = `http://localhost:5000/api/orders/phonepe-callback?merchantOrderId=${merchantTransactionId}&deliveryMethod=${deliveryMethod}`;
+      if (deliveryAddress) {
+        callbackUrl += `&deliveryAddress=${encodeURIComponent(deliveryAddress)}`;
+      }
+
       const payload = {
         merchantId,
         merchantTransactionId,
@@ -597,7 +632,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         amount: copayInr * 100,
         redirectUrl: "http://localhost:5000/cart",
         redirectMode: "REDIRECT",
-        callbackUrl: "http://localhost:5000/api/orders/phonepe-callback",
+        callbackUrl,
         mobileNumber: employee.phoneNumber?.replace(/^\+91/, ""),
         paymentInstrument: {
           type: "PAY_PAGE",
@@ -637,10 +672,17 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.post("/api/orders/phonepe-callback", async (req, res) => {
     try {
       const { code } = req.body;
+      const { merchantOrderId, deliveryMethod, deliveryAddress } = req.query;
+      
       if (code !== "PAYMENT_SUCCESS") {
         return res.status(200).json({ success: false });
       }
-      res.redirect("/cart?payment=success");
+      
+      if (merchantOrderId && deliveryMethod) {
+        res.redirect(`/cart?merchantOrderId=${merchantOrderId}&deliveryMethod=${deliveryMethod}${deliveryAddress ? `&deliveryAddress=${encodeURIComponent(deliveryAddress as string)}` : ''}`);
+      } else {
+        res.redirect("/cart?payment=success");
+      }
     } catch (error: any) {
       console.error("PhonePe callback error:", error);
       res.redirect("/cart?payment=failure");
@@ -649,7 +691,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.post("/api/orders/verify-copay", async (req, res) => {
     try {
-      const { merchantTransactionId } = req.body;
+      const { merchantTransactionId, deliveryMethod = "office", deliveryAddress = null } = req.body;
       const merchantId = process.env.PHONEPE_MERCHANT_ID;
       const saltKey = process.env.PHONEPE_SALT_KEY;
       const saltIndex = process.env.PHONEPE_SALT_INDEX || "1";
@@ -730,6 +772,8 @@ export async function registerRoutes(app: Express): Promise<void> {
             copayInr,
             paymentId: result.data.transactionId,
             phonepeOrderId: merchantTransactionId,
+            deliveryMethod,
+            deliveryAddress,
           },
         });
         orders.push({ order, product });
@@ -1260,34 +1304,23 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // In your backend routes (registerRoutes function)
-// Add this endpoint to get all campaign products
-app.get("/api/admin/all-campaign-products", async (_req, res) => {
-  try {
-    // Get all campaigns
-    const campaigns = await storage.getAllCampaigns();
-    const allCampaignProducts: any[] = [];
-    
-    // For each campaign, get its products
-    for (const campaign of campaigns) {
-      if (campaign.isActive) {
-        const campaignProducts = await storage.getCampaignProducts(campaign.id);
-        allCampaignProducts.push(...campaignProducts);
-      }
+  // Add this endpoint to get all campaign products
+  app.get("/api/admin/all-campaign-products", async (_req, res) => {
+    try {
+      const allCampaignProducts = await storage.getAllCampaignProducts();
+      
+      // Remove duplicates (same product might be in multiple campaigns)
+      const uniqueProducts = new Map();
+      allCampaignProducts.forEach(cp => {
+        if (!uniqueProducts.has(cp.product.id)) {
+          uniqueProducts.set(cp.product.id, cp);
+        }
+      });
+      
+      res.json(Array.from(uniqueProducts.values()));
+    } catch (error: any) {
+      console.error("Error fetching all campaign products:", error);
+      res.status(500).json({ message: "Error fetching campaign products", details: error.message });
     }
-    
-    // Remove duplicates (same product might be in multiple campaigns)
-    const uniqueProducts = new Map();
-    allCampaignProducts.forEach(cp => {
-      if (!uniqueProducts.has(cp.product.id)) {
-        uniqueProducts.set(cp.product.id, cp);
-      }
-    });
-    
-    res.json(Array.from(uniqueProducts.values()));
-  } catch (error: any) {
-    console.error("Error fetching all campaign products:", error);
-    res.status(500).json({ message: "Error fetching campaign products", details: error.message });
-  }
-});
+  });
 }

@@ -5,9 +5,13 @@ import { Header } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { ShoppingCart, Trash2, Plus, Minus } from "lucide-react";
+import { ShoppingCart, Trash2, Plus, Minus, MapPin, Building } from "lucide-react";
 import { SimplePrompt } from "./dashboard";
 import { useLocation } from "wouter";
 
@@ -17,11 +21,22 @@ function getQueryParam(name: string): string | null {
   return params.get(name);
 }
 
+type DeliveryMethod = "office" | "delivery";
+type CheckoutData = {
+  deliveryMethod: DeliveryMethod;
+  deliveryAddress?: string;
+};
+
 export default function Cart() {
   const { employee, token, isAuthenticated } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [showCopayPrompt, setShowCopayPrompt] = useState(false);
+  const [showDeliveryDialog, setShowDeliveryDialog] = useState(false);
+  const [checkoutData, setCheckoutData] = useState<CheckoutData>({
+    deliveryMethod: "office"
+  });
+  const [deliveryAddress, setDeliveryAddress] = useState("");
   const [, setLocation] = useLocation();
 
   const { data: cartItems = [] } = useQuery({
@@ -38,7 +53,7 @@ export default function Cart() {
   const { data: myOrders = [] } = useQuery({
     queryKey: ["/api/orders/my-orders"],
     retry: false,
-    enabled: !!token, // avoid anonymous fetch
+    enabled: !!token,
   });
 
   const totalPointsRequired = useMemo(() => {
@@ -91,13 +106,17 @@ export default function Cart() {
   });
 
   const checkoutMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (deliveryData?: CheckoutData) => {
       const response = await fetch("/api/orders", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
+        body: JSON.stringify({
+          deliveryMethod: deliveryData?.deliveryMethod || "office",
+          deliveryAddress: deliveryData?.deliveryAddress || null,
+        }),
       });
       if (!response.ok) throw new Error((await response.json()).message || "Checkout failed");
       return response.json();
@@ -113,7 +132,37 @@ export default function Cart() {
     },
   });
 
-  // PhonePe: create payment session and redirect to hosted PayPage
+  const handleCheckout = () => {
+    setShowDeliveryDialog(true);
+  };
+
+  const handleDeliveryConfirm = () => {
+    if (checkoutData.deliveryMethod === "delivery" && !deliveryAddress.trim()) {
+      toast({ 
+        title: "Error", 
+        description: "Please enter delivery address", 
+        variant: "destructive" 
+      });
+      return;
+    }
+
+    setShowDeliveryDialog(false);
+    
+    if (needsCopay) {
+      setCheckoutData(prev => ({
+        ...prev,
+        deliveryAddress: checkoutData.deliveryMethod === "delivery" ? deliveryAddress : undefined
+      }));
+      setShowCopayPrompt(true);
+    } else {
+      const deliveryData = {
+        deliveryMethod: checkoutData.deliveryMethod,
+        deliveryAddress: checkoutData.deliveryMethod === "delivery" ? deliveryAddress : undefined
+      };
+      checkoutMutation.mutate(deliveryData);
+    }
+  };
+
   const handleCopayPayment = async () => {
     try {
       const response = await fetch("/api/orders/create-copay-order", {
@@ -122,7 +171,10 @@ export default function Cart() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          deliveryMethod: checkoutData.deliveryMethod,
+          deliveryAddress: checkoutData.deliveryMethod === "delivery" ? deliveryAddress : null,
+        }),
       });
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
@@ -131,7 +183,6 @@ export default function Cart() {
       }
       const data = await response.json();
 
-      // Expect shape: { provider: "phonepe", merchantOrderId, amount, phonepe: { ... } }
       const merchantOrderId = data?.merchantOrderId;
       const redirectUrlFromPhonePe =
         data?.phonepe?.redirectInfo?.url ||
@@ -147,34 +198,43 @@ export default function Cart() {
         return;
       }
 
-      // Keep a note in sessionStorage so our return handler knows what to verify (belt & suspenders).
       if (merchantOrderId) {
         sessionStorage.setItem("PP_MERCHANT_ORDER_ID", merchantOrderId);
+        sessionStorage.setItem("PP_DELIVERY_METHOD", checkoutData.deliveryMethod);
+        if (checkoutData.deliveryMethod === "delivery" && deliveryAddress) {
+          sessionStorage.setItem("PP_DELIVERY_ADDRESS", deliveryAddress);
+        }
       }
 
-      // Redirect to PhonePe PayPage
       window.location.href = redirectUrlFromPhonePe;
     } catch (e) {
       toast({ title: "Error", description: "Failed to initiate payment", variant: "destructive" });
     }
   };
 
-  // When PhonePe returns user to the redirect URL (we recommend setting it to this Cart page),
-  // it will include ?merchantOrderId=... . We auto-verify and send the user to /my-orders.
   useEffect(() => {
     const incoming = getQueryParam("merchantOrderId");
+    const incomingDeliveryMethod = getQueryParam("deliveryMethod") as DeliveryMethod;
+    const incomingDeliveryAddress = getQueryParam("deliveryAddress");
     const stored = sessionStorage.getItem("PP_MERCHANT_ORDER_ID");
     const merchantOrderId = incoming || stored;
 
     async function verifyAndFinish(id: string) {
       try {
+        const deliveryMethod = incomingDeliveryMethod || sessionStorage.getItem("PP_DELIVERY_METHOD") as DeliveryMethod || "office";
+        const deliveryAddress = incomingDeliveryAddress || sessionStorage.getItem("PP_DELIVERY_ADDRESS") || undefined;
+        
         const verifyResponse = await fetch("/api/orders/verify-copay", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ merchantOrderId: id }),
+          body: JSON.stringify({ 
+            merchantOrderId: id,
+            deliveryMethod,
+            deliveryAddress 
+          }),
         });
         if (!verifyResponse.ok) {
           const err = await verifyResponse.json().catch(() => ({}));
@@ -186,15 +246,17 @@ export default function Cart() {
           return;
         }
 
-        // Clean up query param so refreshes don't repeat verify
         if (typeof window !== "undefined" && incoming) {
           const url = new URL(window.location.href);
           url.searchParams.delete("merchantOrderId");
+          url.searchParams.delete("deliveryMethod");
+          url.searchParams.delete("deliveryAddress");
           window.history.replaceState({}, "", url.toString());
         }
         sessionStorage.removeItem("PP_MERCHANT_ORDER_ID");
+        sessionStorage.removeItem("PP_DELIVERY_METHOD");
+        sessionStorage.removeItem("PP_DELIVERY_ADDRESS");
 
-        // Refresh state and go to orders
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ["/api/cart"] }),
           queryClient.invalidateQueries({ queryKey: ["/api/orders/my-orders"] }),
@@ -205,7 +267,7 @@ export default function Cart() {
       } catch {
         toast({
           title: "Verification failed",
-          description: "We couldn’t verify the payment. If amount was deducted, contact support.",
+          description: "We couldn't verify the payment. If amount was deducted, contact support.",
           variant: "destructive",
         });
       }
@@ -215,14 +277,6 @@ export default function Cart() {
       verifyAndFinish(merchantOrderId);
     }
   }, [isAuthenticated, queryClient, token, setLocation, toast]);
-
-  const handleCheckout = () => {
-    if (needsCopay) {
-      setShowCopayPrompt(true);
-    } else {
-      checkoutMutation.mutate();
-    }
-  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -319,10 +373,11 @@ export default function Cart() {
                 onClick={handleCheckout}
                 disabled={
                   cartItems.length === 0 ||
+                  checkoutMutation.isPending ||
                   (maxSelections !== -1 && myOrders.length + cartItems.length > maxSelections)
                 }
               >
-                Checkout
+                {checkoutMutation.isPending ? "Processing..." : "Proceed to Checkout"}
               </Button>
             </div>
           </>
@@ -330,15 +385,117 @@ export default function Cart() {
       </main>
       <Footer />
 
+      <Dialog open={showDeliveryDialog} onOpenChange={setShowDeliveryDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Select Delivery Method</DialogTitle>
+            <DialogDescription>
+              Choose how you would like to receive your order
+            </DialogDescription>
+          </DialogHeader>
+          
+          <RadioGroup
+            value={checkoutData.deliveryMethod}
+            onValueChange={(value: DeliveryMethod) => {
+              setCheckoutData({ ...checkoutData, deliveryMethod: value });
+              if (value === "office") {
+                setDeliveryAddress("");
+              }
+            }}
+            className="space-y-4"
+          >
+            <div className="flex items-center space-x-3 border rounded-lg p-4 hover:bg-accent cursor-pointer">
+              <RadioGroupItem value="office" id="office" />
+              <div className="flex-1">
+                <Label htmlFor="office" className="flex items-center gap-2 cursor-pointer">
+                  <Building className="h-5 w-5" />
+                  <span className="font-medium">Collect from Office</span>
+                </Label>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Pick up your order from the company office during working hours
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex items-center space-x-3 border rounded-lg p-4 hover:bg-accent cursor-pointer">
+              <RadioGroupItem value="delivery" id="delivery" />
+              <div className="flex-1">
+                <Label htmlFor="delivery" className="flex items-center gap-2 cursor-pointer">
+                  <MapPin className="h-5 w-5" />
+                  <span className="font-medium">Home Delivery</span>
+                </Label>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Get your order delivered to your preferred address
+                </p>
+                
+                {checkoutData.deliveryMethod === "delivery" && (
+                  <div className="mt-4 space-y-3">
+                    <Label htmlFor="delivery-address">Delivery Address</Label>
+                    <Textarea
+                      id="delivery-address"
+                      placeholder="Enter your complete address including:\n- House/Flat number\n- Street name\n- Landmark\n- City\n- State\n- PIN Code"
+                      value={deliveryAddress}
+                      onChange={(e) => setDeliveryAddress(e.target.value)}
+                      rows={4}
+                      className="resize-none"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Please provide complete address for accurate delivery
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </RadioGroup>
+          
+          <div className="flex justify-end gap-3 mt-6">
+            <Button variant="outline" onClick={() => setShowDeliveryDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleDeliveryConfirm} disabled={checkoutData.deliveryMethod === "delivery" && !deliveryAddress.trim()}>
+              Confirm Delivery Method
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <SimplePrompt
         open={showCopayPrompt}
         onClose={() => setShowCopayPrompt(false)}
         primaryActionLabel="Confirm and Pay Now"
         onPrimaryAction={handleCopayPayment}
       >
-        <span className="font-medium">
-          Confirm and Pay using co-pay with {userPoints} points + {copayInr} INR.
-        </span>
+        <div className="space-y-3">
+          <span className="font-medium">
+            Confirm and Pay using co-pay with {userPoints} points + {copayInr} INR.
+          </span>
+          <div className="text-sm text-muted-foreground border-t pt-3">
+            <p className="font-medium">Delivery Method:</p>
+            <p className="mt-1">
+              {checkoutData.deliveryMethod === "office" ? (
+                <span className="flex items-center gap-2">
+                  <Building className="h-4 w-4" />
+                  Collect from Office
+                </span>
+              ) : (
+                <span className="flex items-start gap-2">
+                  <MapPin className="h-4 w-4 mt-0.5" />
+                  <span>
+                    Home Delivery
+                    {deliveryAddress && (
+                      <>
+                        <br />
+                        <span className="text-xs mt-1 block p-2 bg-muted rounded">
+                          {deliveryAddress}
+                        </span>
+                      </>
+                    )}
+                  </span>
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
       </SimplePrompt>
     </div>
   );

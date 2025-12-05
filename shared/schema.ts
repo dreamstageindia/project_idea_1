@@ -66,7 +66,7 @@ export const products = pgTable("products", {
   colors: json("colors").$type<string[]>().default([]),
   stock: integer("stock").default(0),
   packagesInclude: json("packages_include").$type<string[]>().default([]),
-  specifications: text("specifications").default(""), // CHANGED: from JSON to TEXT
+  specifications: text("specifications").default(""),
   sku: text("sku").notNull().unique(),
   isActive: boolean("is_active").default(true),
   backupProductId: varchar("backup_product_id"),
@@ -225,7 +225,7 @@ export const insertProductSchema = z.object({
   colors: z.array(z.string()).default([]),
   stock: z.number().int().min(0).default(0),
   packagesInclude: z.array(z.string()).default([]),
-  specifications: z.string().default(""), // CHANGED: from object to string
+  specifications: z.string().default(""),
   sku: z.string().min(1, "SKU is required"),
   isActive: z.boolean().default(true),
   backupProductId: z.string().nullable().default(null),
@@ -239,6 +239,15 @@ export const insertOrderSchema = createInsertSchema(orders).pick({
   selectedColor: true,
   quantity: true,
   metadata: true,
+}).extend({
+  metadata: z.object({
+    usedPoints: z.number().optional(),
+    copayInr: z.number().optional().nullable(),
+    paymentId: z.string().optional().nullable(),
+    phonepeOrderId: z.string().optional().nullable(),
+    deliveryMethod: z.enum(['office', 'delivery']).optional().default('office'),
+    deliveryAddress: z.string().optional().nullable(),
+  }).optional().nullable(),
 });
 
 export const insertCartItemSchema = createInsertSchema(cartItems).pick({
@@ -307,7 +316,16 @@ export type InsertProduct = z.infer<typeof insertProductSchema>;
 export type Product = typeof products.$inferSelect;
 
 export type InsertOrder = z.infer<typeof insertOrderSchema>;
-export type Order = typeof orders.$inferSelect;
+export type Order = typeof orders.$inferSelect & {
+  metadata: {
+    usedPoints: number;
+    copayInr?: number;
+    paymentId?: string;
+    phonepeOrderId?: string;
+    deliveryMethod?: 'office' | 'delivery';
+    deliveryAddress?: string;
+  } | null;
+};
 
 export type InsertCartItem = z.infer<typeof insertCartItemSchema>;
 export type CartItem = typeof cartItems.$inferSelect;

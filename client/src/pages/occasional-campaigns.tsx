@@ -4,11 +4,10 @@ import { Header } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { CheckCircle, Calendar, Users, Gift, Package, ShoppingCart, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { apiRequest } from "@/lib/queryClient";
 import { Badge } from "@/components/ui/badge";
 
 type Campaign = {
@@ -420,8 +419,9 @@ function ProductsModal({
 }
 
 export default function OccasionalCampaigns() {
-  const { employee } = useAuth();
+  const { employee, token } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showProductsModal, setShowProductsModal] = useState(false);
@@ -458,12 +458,26 @@ export default function OccasionalCampaigns() {
   const addToCartMutation = useMutation({
     mutationFn: async (product: Product) => {
       if (!employee) throw new Error("You must be logged in to add items to cart");
+      if (!token) throw new Error("Authentication token not found");
       
-      const res = await apiRequest("POST", "/api/cart", {
-        productId: product.id,
-        quantity: 1,
+      const response = await fetch("/api/cart", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          productId: product.id,
+          quantity: 1,
+        }),
       });
-      return res.json();
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to add to cart");
+      }
+      
+      return response.json();
     },
     onSuccess: () => {
       toast({
@@ -473,6 +487,8 @@ export default function OccasionalCampaigns() {
       setSelectedProduct(null);
       setSelectedCampaign(null);
       setShowProductsModal(false);
+      // Invalidate cart query to refresh cart data
+      queryClient.invalidateQueries({ queryKey: ["/api/cart"] });
     },
     onError: (error: any) => {
       toast({
@@ -503,6 +519,15 @@ export default function OccasionalCampaigns() {
       return;
     }
     
+    if (!token) {
+      toast({
+        title: "Authentication Error",
+        description: "Please refresh the page and try again",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     if (product.stock === 0) {
       toast({
         title: "Out of Stock",
@@ -513,7 +538,7 @@ export default function OccasionalCampaigns() {
     }
     
     addToCartMutation.mutate(product);
-  }, [employee, addToCartMutation, toast]);
+  }, [employee, token, addToCartMutation, toast]);
 
   const companyName = branding?.companyName || "Your Company";
 
