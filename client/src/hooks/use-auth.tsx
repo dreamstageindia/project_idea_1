@@ -79,7 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     queryKey: ["/api/auth/session"],
     enabled: !!token, // only try when we believe we're logged in
     retry: false,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 60 * 60 * 1000, // 5 minutes
   });
 
   const logoutMutation = useMutation({
