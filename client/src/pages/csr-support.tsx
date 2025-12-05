@@ -83,7 +83,7 @@ function CSRProductCard({ product }: { product: Product }) {
               <div className="space-y-2">
                 {Object.entries(parsedSpecifications).slice(0, 3).map(([key, value]) => (
                   <div key={key} className="text-sm">
-                    <span className="text-gray-600 font-medium">{key}:</span>
+                    <span className="text-gray-600 font-medium">{key}</span>
                     {value && <span className="text-gray-900 ml-2">{value}</span>}
                   </div>
                 ))}
