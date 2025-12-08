@@ -561,31 +561,7 @@ export default function Login() {
             </Button>
           </form>
 
-          {/* Login Options Info */}
-          <div className="mt-12 max-w-md mx-auto">
-            <div className="bg-white/50 backdrop-blur-sm rounded-xl p-6 border border-gray-200">
-              <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                <Shield className="h-4 w-4" />
-                Login Options Available
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                    <span className="font-medium">Pre-registered Users</span>
-                  </div>
-                  <p className="text-xs pl-4">Accounts uploaded by administrator</p>
-                </div>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                    <span className="font-medium">Domain Auto-registration</span>
-                  </div>
-                  <p className="text-xs pl-4">First-time users from authorized domains</p>
-                </div>
-              </div>
-            </div>
-          </div>
+          
         </div>
       </div>
 

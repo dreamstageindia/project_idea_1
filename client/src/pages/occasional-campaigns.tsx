@@ -6,9 +6,10 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import { CheckCircle, Calendar, Users, Gift, Package, ShoppingCart, X, Image as ImageIcon } from "lucide-react";
+import { CheckCircle, Calendar, Users, Gift, Package, ShoppingCart, X, Image as ImageIcon, Eye, ChevronLeft, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 
 type Campaign = {
   id: string;
@@ -35,6 +36,12 @@ type Product = {
   isActive: boolean;
   specifications?: string;
   packagesInclude?: string[];
+  category?: {
+    id: string;
+    name: string;
+    description?: string;
+    imageUrl?: string;
+  } | null;
 };
 
 type Branding = {
@@ -46,9 +53,308 @@ type Branding = {
   bannerUrl: string | null;
   bannerText: string | null;
   updatedAt: string;
+  inrPerPoint?: string;
 };
 
-// Campaign Card Component
+// Product Detail Modal Component
+function ProductDetailModal({
+  product,
+  isOpen,
+  onClose,
+  onAddToCart,
+  isAddingToCart,
+}: {
+  product: Product | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onAddToCart: (product: Product) => void;
+  isAddingToCart: boolean;
+}) {
+  const { data: branding } = useQuery<Branding>({
+    queryKey: ["/api/admin/branding"],
+  });
+
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [selectedColor, setSelectedColor] = useState<string>("");
+
+  const inrPerPoint = parseFloat(branding?.inrPerPoint || "1");
+  const pointsRequired = Math.ceil(parseFloat(product?.price || "0") / inrPerPoint);
+
+  // Handle image navigation
+  const handlePrevImage = () => {
+    if (!product?.images) return;
+    setSelectedImageIndex((prev) => 
+      prev === 0 ? product.images.length - 1 : prev - 1
+    );
+  };
+
+  const handleNextImage = () => {
+    if (!product?.images) return;
+    setSelectedImageIndex((prev) => 
+      prev === product.images.length - 1 ? 0 : prev + 1
+    );
+  };
+
+  // Get color display style
+  const getColorStyle = (color: string) => {
+    if (color.match(/^#[0-9A-Fa-f]{6}$/)) {
+      return "";
+    }
+    const colorMap: Record<string, string> = {
+      black: "bg-black",
+      white: "bg-white border-2 border-gray-300",
+      blue: "bg-blue-600",
+      red: "bg-red-600",
+      green: "bg-green-600",
+      yellow: "bg-yellow-400",
+      purple: "bg-purple-600",
+      pink: "bg-pink-500",
+      orange: "bg-orange-500",
+      brown: "bg-amber-900",
+      gray: "bg-gray-500",
+      charcoal: "bg-gray-800",
+      navy: "bg-blue-900",
+      "space-gray": "bg-gray-600",
+      silver: "bg-gray-300",
+      gold: "bg-yellow-300",
+      "rose-gold": "bg-gradient-to-br from-rose-300 to-amber-200",
+    };
+    return colorMap[color.toLowerCase()] || "bg-gray-400";
+  };
+
+  const getColorInlineStyle = (color: string) => {
+    if (color.match(/^#[0-9A-Fa-f]{6}$/)) {
+      return { backgroundColor: color };
+    }
+    return {};
+  };
+
+  if (!product) return null;
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto p-0">
+        <div className="grid md:grid-cols-2 gap-0 min-h-[600px]">
+          {/* Image Section */}
+          <div className="flex flex-col p-6 bg-white">
+            <div className="flex-1 relative flex items-center justify-center min-h-[400px] bg-gray-50 rounded-lg mb-4">
+              {product.images && product.images.length > 0 ? (
+                <>
+                  <img
+                    src={product.images[selectedImageIndex]}
+                    alt={product.name}
+                    className="w-full h-full object-contain p-4"
+                    onError={(e) => {
+                      e.currentTarget.src = "https://placehold.co/600x400/f8fafc/64748b?text=No+Image";
+                      e.currentTarget.className = "w-full h-full object-contain bg-gray-100 p-4";
+                    }}
+                  />
+                  {product.images.length > 1 && (
+                    <>
+                      <button
+                        onClick={handlePrevImage}
+                        className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-colors"
+                        aria-label="Previous image"
+                      >
+                        <ChevronLeft className="w-6 h-6" />
+                      </button>
+                      <button
+                        onClick={handleNextImage}
+                        className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-colors"
+                        aria-label="Next image"
+                      >
+                        <ChevronRight className="w-6 h-6" />
+                      </button>
+                      <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-2">
+                        {product.images.map((_, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => setSelectedImageIndex(idx)}
+                            className={`w-2 h-2 rounded-full transition-all ${
+                              selectedImageIndex === idx 
+                                ? 'bg-blue-600 scale-125' 
+                                : 'bg-gray-300 hover:bg-gray-400'
+                            }`}
+                            aria-label={`View image ${idx + 1}`}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center p-4">
+                  <ImageIcon className="w-24 h-24 text-gray-300 mb-4" />
+                  <p className="text-gray-400">No image available</p>
+                </div>
+              )}
+            </div>
+            
+            {/* Image Thumbnails */}
+            {product.images && product.images.length > 1 && (
+              <div className="flex space-x-2 overflow-x-auto pt-4">
+                {product.images.map((image, index) => (
+                  <button
+                    key={index}
+                    onClick={() => setSelectedImageIndex(index)}
+                    className={`flex-shrink-0 w-20 h-20 bg-gray-100 rounded-lg overflow-hidden border-2 transition-colors ${
+                      selectedImageIndex === index 
+                        ? 'border-blue-500' 
+                        : 'border-transparent hover:border-gray-300'
+                    }`}
+                  >
+                    <img
+                      src={image}
+                      alt={`${product.name} thumbnail ${index + 1}`}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.src = "https://placehold.co/600x400/f8fafc/64748b?text=Thumb";
+                        e.currentTarget.className = "w-full h-full object-cover";
+                      }}
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          {/* Details Section */}
+          <div className="p-8 bg-muted/30 flex flex-col">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-3xl font-bold text-gray-900">{product.name}</h2>
+                <p className="text-gray-500 mt-1">{product.sku}</p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onClose}
+                aria-label="Close"
+                className="hover:bg-gray-100 rounded-full"
+              >
+                <X className="h-6 w-6" />
+              </Button>
+            </div>
+            
+            {/* Price Display */}
+            <div className="mb-6">
+              <div className="text-3xl font-bold text-blue-600">
+                ₹{parseFloat(product.price).toFixed(2)}
+              </div>
+              {branding?.inrPerPoint && (
+                <div className="text-sm text-gray-500 mt-1">
+                  Equivalent to {pointsRequired} points
+                </div>
+              )}
+            </div>
+            
+            {/* Stock Status */}
+            <div className="mb-6">
+              <Badge 
+                variant={product.stock > 0 ? "default" : "destructive"}
+                className="text-sm py-1 px-3"
+              >
+                {product.stock > 0 
+                  ? `${product.stock} items in stock` 
+                  : 'Out of stock'}
+              </Badge>
+            </div>
+            
+            {/* Specifications */}
+            {product.specifications && (
+              <div className="mb-6">
+                <h4 className="font-semibold text-lg mb-3">Specifications:</h4>
+                <div className="bg-white rounded-lg p-4 shadow-sm">
+                  <div className="whitespace-pre-wrap text-sm text-muted-foreground leading-relaxed">
+                    {product.specifications}
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Packages Include */}
+            {product.packagesInclude && product.packagesInclude.length > 0 && (
+              <div className="mb-6">
+                <h4 className="font-semibold text-lg mb-3">Packages Include:</h4>
+                <div className="space-y-2 text-sm bg-white rounded-lg p-4 shadow-sm">
+                  {product.packagesInclude.map((item, index) => (
+                    <div key={index} className="flex items-start">
+                      <CheckCircle className="text-green-600 mr-3 h-5 w-5 mt-0.5 flex-shrink-0" />
+                      <span className="text-muted-foreground">{item}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Categories */}
+            {product.categories && product.categories.length > 0 && (
+              <div className="mb-6">
+                <h4 className="font-semibold text-lg mb-3">Categories:</h4>
+                <div className="flex flex-wrap gap-2">
+                  {product.categories.map((category) => (
+                    <Badge 
+                      key={category.id} 
+                      variant="outline"
+                      className="text-sm"
+                    >
+                      {category.name}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Color Selection */}
+            {product.colors && product.colors.length > 0 && (
+              <div className="mb-6">
+                <h4 className="font-semibold text-lg mb-3">Choose Color:</h4>
+                <div className="flex flex-wrap gap-3">
+                  {product.colors.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      className={`w-12 h-12 rounded-full border-2 transition-all duration-200 ${
+                        selectedColor === color 
+                          ? "ring-2 ring-blue-500 ring-offset-2" 
+                          : "border-gray-300 hover:border-blue-400"
+                      } ${getColorStyle(color)}`}
+                      style={getColorInlineStyle(color)}
+                      onClick={() => setSelectedColor(color)}
+                      aria-pressed={selectedColor === color}
+                      aria-label={`Select color ${color}`}
+                      title={color}
+                    />
+                  ))}
+                </div>
+                {selectedColor && (
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Selected: <span className="font-medium">{selectedColor}</span>
+                  </p>
+                )}
+              </div>
+            )}
+            
+            {/* Add to Cart Button */}
+            <div className="mt-auto">
+              <Button
+                className="w-full py-4 text-lg font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+                onClick={() => onAddToCart(product)}
+                disabled={product.stock === 0 || isAddingToCart}
+                size="lg"
+              >
+                <ShoppingCart className="mr-3 h-6 w-6" />
+                {isAddingToCart ? 'Adding to Cart...' : 'Add to Cart'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Campaign Card Component (unchanged)
 function CampaignCard({ 
   campaign, 
   onSelect,
@@ -147,23 +453,24 @@ function CampaignCard({
   );
 }
 
-// Product Card Component
+// Updated Product Card Component with View Details button
 function ProductCard({ 
   product, 
   onSelect,
   isSelected,
   onAddToCart,
-  isAddingToCart 
+  isAddingToCart,
+  onViewDetails // New prop
 }: { 
   product: Product;
   onSelect: (product: Product) => void;
   isSelected: boolean;
   onAddToCart: (product: Product) => void;
   isAddingToCart: boolean;
+  onViewDetails: (product: Product) => void; // New prop
 }) {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
-  // Handle image error
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
     e.currentTarget.src = "https://placehold.co/600x400/f8fafc/64748b?text=No+Image";
     e.currentTarget.className = "w-full h-48 object-contain bg-gray-100";
@@ -174,17 +481,11 @@ function ProductCard({
     : null;
 
   return (
-    <div 
-      className={`bg-white rounded-xl border-2 overflow-hidden transition-all duration-300 ${
-        isSelected 
-          ? 'border-green-500 ring-2 ring-green-100' 
-          : 'border-gray-200 hover:border-gray-300'
-      }`}
-    >
+    <div className="bg-white rounded-xl border-2 border-gray-200 overflow-hidden transition-all duration-300 hover:border-gray-300">
       {/* Product Images */}
       <div className="relative">
         {mainImage ? (
-          <div className="w-full h-64 bg-gray-50">
+          <div className="w-full h-48 bg-gray-50 cursor-pointer" onClick={() => onViewDetails(product)}>
             <img
               src={mainImage}
               alt={product.name}
@@ -213,7 +514,10 @@ function ProductCard({
             )}
           </div>
         ) : (
-          <div className="w-full h-64 bg-gradient-to-r from-gray-100 to-gray-200 flex flex-col items-center justify-center p-4">
+          <div 
+            className="w-full h-48 bg-gradient-to-r from-gray-100 to-gray-200 flex flex-col items-center justify-center p-4 cursor-pointer"
+            onClick={() => onViewDetails(product)}
+          >
             <ImageIcon className="w-16 h-16 text-gray-300 mb-4" />
             <p className="text-gray-400 text-sm text-center">No image available</p>
           </div>
@@ -223,12 +527,29 @@ function ProductCard({
             {product.stock > 0 ? `${product.stock} in stock` : 'Out of stock'}
           </Badge>
         </div>
+        {/* View Details Button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onViewDetails(product);
+          }}
+          className="absolute top-4 left-4 bg-white/90 hover:bg-white text-gray-700 hover:text-blue-600 px-3 py-1 rounded-full text-sm font-medium flex items-center gap-1 transition-colors"
+          title="View details"
+        >
+          <Eye className="w-4 h-4" />
+          Details
+        </button>
       </div>
       
       <div className="p-4">
         <div className="flex justify-between items-start mb-2">
           <div className="flex-1">
-            <h4 className="font-bold text-gray-900 mb-1 line-clamp-1">{product.name}</h4>
+            <h4 
+              className="font-bold text-gray-900 mb-1 line-clamp-1 cursor-pointer hover:text-blue-600"
+              onClick={() => onViewDetails(product)}
+            >
+              {product.name}
+            </h4>
             <p className="text-sm text-gray-500 mb-2">{product.sku}</p>
           </div>
           <div className="text-lg font-bold text-blue-600 whitespace-nowrap ml-2">
@@ -313,7 +634,7 @@ function ProductCard({
   );
 }
 
-// Campaign Hero Component
+// Campaign Hero Component (unchanged)
 function CampaignHero({ 
   backgroundImage, 
   companyName 
@@ -361,7 +682,7 @@ function CampaignHero({
   );
 }
 
-// Products Modal Component
+// Updated Products Modal Component
 function ProductsModal({
   campaign,
   isOpen,
@@ -369,7 +690,8 @@ function ProductsModal({
   selectedProduct,
   onSelectProduct,
   onAddToCart,
-  isAddingToCart
+  isAddingToCart,
+  onViewProductDetails, // New prop
 }: {
   campaign: Campaign;
   isOpen: boolean;
@@ -378,6 +700,7 @@ function ProductsModal({
   onSelectProduct: (product: Product) => void;
   onAddToCart: (product: Product) => void;
   isAddingToCart: boolean;
+  onViewProductDetails: (product: Product) => void; // New prop
 }) {
   const { data: products = [], isLoading } = useQuery<Product[]>({
     queryKey: [`/api/campaigns/${campaign.id}/products`],
@@ -431,6 +754,7 @@ function ProductsModal({
                     isSelected={selectedProduct?.id === product.id}
                     onAddToCart={onAddToCart}
                     isAddingToCart={isAddingToCart}
+                    onViewDetails={onViewProductDetails} // Pass the function
                   />
                 ))}
               </div>
@@ -453,15 +777,24 @@ function ProductsModal({
                         </p>
                       )}
                     </div>
-                    <Button
-                      variant="default"
-                      className="bg-green-600 hover:bg-green-700 whitespace-nowrap"
-                      onClick={() => onAddToCart(selectedProduct)}
-                      disabled={isAddingToCart}
-                    >
-                      <ShoppingCart className="w-4 h-4 mr-2" />
-                      {isAddingToCart ? 'Processing...' : 'Add to Cart'}
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => onViewProductDetails(selectedProduct)}
+                      >
+                        <Eye className="w-4 h-4 mr-2" />
+                        View Details
+                      </Button>
+                      <Button
+                        variant="default"
+                        className="bg-green-600 hover:bg-green-700 whitespace-nowrap"
+                        onClick={() => onAddToCart(selectedProduct)}
+                        disabled={isAddingToCart}
+                      >
+                        <ShoppingCart className="w-4 h-4 mr-2" />
+                        {isAddingToCart ? 'Processing...' : 'Add to Cart'}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -479,7 +812,9 @@ export default function OccasionalCampaigns() {
   const queryClient = useQueryClient();
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [productForDetails, setProductForDetails] = useState<Product | null>(null);
   const [showProductsModal, setShowProductsModal] = useState(false);
+  const [showProductDetailModal, setShowProductDetailModal] = useState(false);
 
   const { data: branding } = useQuery<Branding>({
     queryKey: ["/api/admin/branding"],
@@ -542,6 +877,7 @@ export default function OccasionalCampaigns() {
       setSelectedProduct(null);
       setSelectedCampaign(null);
       setShowProductsModal(false);
+      setShowProductDetailModal(false);
       // Invalidate cart query to refresh cart data
       queryClient.invalidateQueries({ queryKey: ["/api/cart"] });
     },
@@ -594,6 +930,11 @@ export default function OccasionalCampaigns() {
     
     addToCartMutation.mutate(product);
   }, [employee, token, addToCartMutation, toast]);
+
+  const handleViewProductDetails = useCallback((product: Product) => {
+    setProductForDetails(product);
+    setShowProductDetailModal(true);
+  }, []);
 
   const companyName = branding?.companyName || "Your Company";
 
@@ -717,8 +1058,21 @@ export default function OccasionalCampaigns() {
           onSelectProduct={handleProductSelect}
           onAddToCart={handleAddToCart}
           isAddingToCart={addToCartMutation.isPending}
+          onViewProductDetails={handleViewProductDetails}
         />
       )}
+
+      {/* Product Detail Modal */}
+      <ProductDetailModal
+        product={productForDetails}
+        isOpen={showProductDetailModal}
+        onClose={() => {
+          setShowProductDetailModal(false);
+          setProductForDetails(null);
+        }}
+        onAddToCart={handleAddToCart}
+        isAddingToCart={addToCartMutation.isPending}
+      />
       
       <Footer />
     </div>
