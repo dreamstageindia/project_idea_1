@@ -10,6 +10,7 @@ import { CheckCircle, Calendar, Users, Gift, Package, ShoppingCart, X, Image as 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import heroBgImage from '@assets/element_1.png';
 
 type Campaign = {
   id: string;
@@ -354,7 +355,7 @@ function ProductDetailModal({
   );
 }
 
-// Campaign Card Component (unchanged)
+// Campaign Card Component
 function CampaignCard({ 
   campaign, 
   onSelect,
@@ -453,21 +454,21 @@ function CampaignCard({
   );
 }
 
-// Updated Product Card Component with View Details button
+// Product Card Component
 function ProductCard({ 
   product, 
   onSelect,
   isSelected,
   onAddToCart,
   isAddingToCart,
-  onViewDetails // New prop
+  onViewDetails
 }: { 
   product: Product;
   onSelect: (product: Product) => void;
   isSelected: boolean;
   onAddToCart: (product: Product) => void;
   isAddingToCart: boolean;
-  onViewDetails: (product: Product) => void; // New prop
+  onViewDetails: (product: Product) => void;
 }) {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
@@ -634,46 +635,34 @@ function ProductCard({
   );
 }
 
-// Campaign Hero Component (unchanged)
+// Campaign Hero Component - Updated to use element_1.png without tint, full width
 function CampaignHero({ 
-  backgroundImage, 
   companyName 
 }: { 
-  backgroundImage?: string; 
   companyName: string;
 }) {
-  const heroStyle = useMemo<React.CSSProperties>(() => {
-    if (backgroundImage) {
-      return {
-        backgroundImage: `linear-gradient(135deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.3) 100%), url(${backgroundImage})`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        backgroundRepeat: "no-repeat",
-      };
-    }
-    return {
-      background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-    };
-  }, [backgroundImage]);
-
   return (
     <div 
-      className="relative h-64 rounded-2xl mx-4 mt-4 mb-8 overflow-hidden shadow-xl"
-      style={heroStyle}
+      className="relative min-h-[400px] rounded-2xl mx-4 mt-4 mb-8 overflow-hidden shadow-xl bg-gradient-to-br from-purple-50 via-blue-50 to-purple-100"
+      style={{
+        backgroundImage: `url(${heroBgImage})`,
+        backgroundSize: "100% auto",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+      }}
     >
-      <div className="absolute inset-0 bg-black/20"></div>
-      <div className="relative z-10 h-full flex items-center justify-center text-center text-white">
+      <div className="relative z-10 h-full flex items-center justify-center text-center text-white py-16">
         <div className="max-w-4xl px-6">
           <div className="flex justify-center mb-4">
-            <Gift className="w-12 h-12 text-white" />
+            <Gift className="w-12 h-12 text-white drop-shadow-lg" />
           </div>
           <h1 className="text-5xl font-bold mb-4 drop-shadow-lg">
             Special Campaigns
           </h1>
-          <p className="text-2xl font-semibold mb-6 drop-shadow-md">
+          <p className="text-2xl font-semibold mb-6 drop-shadow-lg">
             {companyName} Exclusive Campaigns
           </p>
-          <p className="text-xl opacity-90 drop-shadow-md">
+          <p className="text-xl opacity-90 drop-shadow-lg">
             Select a campaign and choose your favorite product
           </p>
         </div>
@@ -682,7 +671,7 @@ function CampaignHero({
   );
 }
 
-// Updated Products Modal Component
+// Products Modal Component
 function ProductsModal({
   campaign,
   isOpen,
@@ -691,7 +680,7 @@ function ProductsModal({
   onSelectProduct,
   onAddToCart,
   isAddingToCart,
-  onViewProductDetails, // New prop
+  onViewProductDetails,
 }: {
   campaign: Campaign;
   isOpen: boolean;
@@ -700,7 +689,7 @@ function ProductsModal({
   onSelectProduct: (product: Product) => void;
   onAddToCart: (product: Product) => void;
   isAddingToCart: boolean;
-  onViewProductDetails: (product: Product) => void; // New prop
+  onViewProductDetails: (product: Product) => void;
 }) {
   const { data: products = [], isLoading } = useQuery<Product[]>({
     queryKey: [`/api/campaigns/${campaign.id}/products`],
@@ -754,7 +743,7 @@ function ProductsModal({
                     isSelected={selectedProduct?.id === product.id}
                     onAddToCart={onAddToCart}
                     isAddingToCart={isAddingToCart}
-                    onViewDetails={onViewProductDetails} // Pass the function
+                    onViewDetails={onViewProductDetails}
                   />
                 ))}
               </div>
@@ -947,17 +936,7 @@ export default function OccasionalCampaigns() {
       />
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-bold text-gray-900 mb-4">
-            Featured Campaigns
-          </h2>
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-            Discover our exclusive campaigns. Select any campaign to view available products and place your order.
-          </p>
-          <p className="text-sm text-gray-500 mt-2">
-            Note: You can select only one product per campaign
-          </p>
-        </div>
+        
 
         {isLoading ? (
           <div className="flex items-center justify-center h-64">

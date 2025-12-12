@@ -2,7 +2,7 @@ import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Building } from "lucide-react";
-import giftBoxImg from '@assets/element_5.png';
+import giftBoxImg from '@assets/bg_1.png';
 
 type Branding = {
   id: string;
@@ -26,7 +26,13 @@ export default function Landing() {
   const companyName = branding?.companyName || "";
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-purple-100 relative overflow-hidden">
+    <div className="min-h-screen relative overflow-hidden">
+      {/* Background gradient layer */}
+      <div 
+        className="absolute inset-0 bg-gradient-to-br from-purple-50 via-blue-50 to-purple-100"
+      />
+      
+      {/* Gradient pattern overlay */}
       <div 
         className="absolute inset-0 opacity-10"
         style={{
@@ -36,7 +42,19 @@ export default function Landing() {
         }}
       />
       
-      <div className="absolute top-8 left-8">
+      {/* Full screen background image */}
+      <div 
+        className="absolute inset-0"
+        style={{
+          backgroundImage: `url(${giftBoxImg})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+        }}
+      />
+      
+      {/* Logo */}
+      <div className="absolute top-8 left-8 z-20">
         {logoUrl ? (
           <img 
             src={logoUrl} 
@@ -52,7 +70,8 @@ export default function Landing() {
         )}
       </div>
       
-      <div className="relative min-h-screen flex items-center">
+      {/* Content */}
+      <div className="relative min-h-screen flex items-center z-10">
         <div className="max-w-7xl mx-auto px-8 w-full">
           <div className="grid md:grid-cols-2 gap-12 items-center">
             <div>
@@ -69,11 +88,11 @@ export default function Landing() {
               <div className="grid grid-cols-2 gap-8 mb-12">
                 <div>
                   <p className="text-sm text-muted-foreground mb-2">For All</p>
-                  <p className="text-2xl font-semibold text-primary">Seasons</p>
+                  <p className="text-2xl font-semibold text-green-400">Seasons</p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground mb-2">For All</p>
-                  <p className="text-2xl font-semibold text-primary">Reasons</p>
+                  <p className="text-2xl font-semibold text-green-400">Reasons</p>
                 </div>
               </div>
               
@@ -87,25 +106,8 @@ export default function Landing() {
               </Button>
             </div>
             
-            <div className="flex justify-center items-center relative">
-              <div 
-                className="absolute inset-0 opacity-20"
-                style={{
-                  backgroundImage: `radial-gradient(circle at 50% 30%, rgba(147, 51, 234, 0.3) 0%, transparent 40%),
-                                   radial-gradient(circle at 30% 70%, rgba(147, 51, 234, 0.3) 0%, transparent 40%),
-                                   radial-gradient(circle at 70% 70%, rgba(147, 51, 234, 0.3) 0%, transparent 40%),
-                                   radial-gradient(circle at 50% 90%, rgba(147, 51, 234, 0.3) 0%, transparent 40%)`,
-                }}
-              />
-              <div className="relative z-10">
-                <img 
-                  src={giftBoxImg} 
-                  alt="Thoughtful Gifting" 
-                  className="w-full max-w-md drop-shadow-2xl"
-                  data-testid="img-gift-box"
-                />
-              </div>
-            </div>
+            {/* Empty column to maintain grid layout */}
+            <div className="hidden md:block"></div>
           </div>
         </div>
       </div>

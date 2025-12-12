@@ -12,6 +12,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import bgImage from '@assets/bg_2.png';
 
 type Branding = {
   id: string;
@@ -426,7 +427,11 @@ export default function Login() {
     !domainStatus.isLoading;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-purple-100 relative overflow-hidden">
+    <div className="min-h-screen relative overflow-hidden">
+      {/* Background gradient layer */}
+      <div className="absolute inset-0 bg-gradient-to-br from-purple-50 via-blue-50 to-purple-100" />
+      
+      {/* Gradient pattern overlay */}
       <div 
         className="absolute inset-0 opacity-10"
         style={{
@@ -436,7 +441,19 @@ export default function Login() {
         }}
       />
       
-      <div className="absolute top-8 left-8">
+      {/* Full screen background image */}
+      <div 
+        className="absolute inset-0"
+        style={{
+          backgroundImage: `url(${bgImage})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+        }}
+      />
+      
+      {/* Logo */}
+      <div className="absolute top-8 left-8 z-20">
         {logoUrl ? (
           <img 
             src={logoUrl} 
@@ -452,7 +469,8 @@ export default function Login() {
         )}
       </div>
       
-      <div className="relative min-h-screen flex items-center justify-center p-4">
+      {/* Content */}
+      <div className="relative min-h-screen flex items-center justify-center p-4 z-10">
         <div className="w-full max-w-2xl text-center">
           <h1 className="text-5xl font-bold text-primary mb-4" data-testid="text-login-title">
             Welcome
