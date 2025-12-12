@@ -23,7 +23,7 @@ export default function Landing() {
   });
 
   const logoUrl = branding?.logoUrl || null;
-  const companyName = branding?.companyName || "Carelon";
+  const companyName = branding?.companyName || "";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-purple-100 relative overflow-hidden">
@@ -42,12 +42,12 @@ export default function Landing() {
             src={logoUrl} 
             alt={`${companyName} Logo`}
             className="h-12"
-            data-testid="img-carelon-logo"
+            data-testid="img-sun-logo"
           />
         ) : (
           <Building 
             className="h-12 w-12 text-gray-900" 
-            data-testid="img-carelon-logo"
+            data-testid="img-sun-logo"
           />
         )}
       </div>

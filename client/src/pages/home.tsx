@@ -27,7 +27,7 @@ export default function Home() {
     queryKey: ["/api/admin/branding"],
   });
 
-  const companyName = branding?.companyName || "Carelon";
+  const companyName = branding?.companyName || "";
   const primaryColor = branding?.primaryColor || "#1e40af";
   const logoUrl = branding?.logoUrl || null;
 

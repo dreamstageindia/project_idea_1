@@ -7,13 +7,11 @@ import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { OTPVerificationModal } from "@/components/auth/otp-verification-modal";
-import { Mail, ArrowRight, CheckCircle, XCircle, Loader2, Shield } from "lucide-react";
+import { Mail, ArrowRight, CheckCircle, XCircle, Loader2, Shield, Building } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import whiteGiftImg from '@assets/image_1764034739122.png';
-import carelonLogoImg from '@assets/image_1764034739122.png';
 
 type Branding = {
   id: string;
@@ -439,12 +437,19 @@ export default function Login() {
       />
       
       <div className="absolute top-8 left-8">
-        <img 
-          src={carelonLogoImg} 
-          alt="Carelon Logo" 
-          className="h-12"
-          data-testid="img-carelon-logo"
-        />
+        {logoUrl ? (
+          <img 
+            src={logoUrl} 
+            alt={`${company} Logo`}
+            className="h-12"
+            data-testid="img-carelon-logo"
+          />
+        ) : (
+          <Building 
+            className="h-12 w-12 text-gray-900" 
+            data-testid="img-carelon-logo"
+          />
+        )}
       </div>
       
       <div className="relative min-h-screen flex items-center justify-center p-4">

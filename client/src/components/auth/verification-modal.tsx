@@ -99,7 +99,7 @@ export function VerificationModal({
             />
             {/* Small italic hint */}
             <p className="text-xs italic text-muted-foreground mt-1">
-              (As per Carelon Records)
+              (As per Records)
             </p>
           </div>
 
