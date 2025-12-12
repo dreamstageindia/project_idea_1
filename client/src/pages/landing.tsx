@@ -1,10 +1,29 @@
 import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import giftBoxImg from '@assets/generated_images/purple_gift_box_with_bow.png';
-import carelonLogoImg from '@assets/image_1764034739122.png';
+import { Building } from "lucide-react";
+import giftBoxImg from '@assets/element_5.png';
+
+type Branding = {
+  id: string;
+  logoUrl: string | null;
+  companyName: string;
+  primaryColor: string;
+  accentColor: string;
+  bannerUrl: string | null;
+  bannerText: string | null;
+  updatedAt: string;
+};
 
 export default function Landing() {
   const [, setLocation] = useLocation();
+
+  const { data: branding } = useQuery<Branding>({
+    queryKey: ["/api/admin/branding"],
+  });
+
+  const logoUrl = branding?.logoUrl || null;
+  const companyName = branding?.companyName || "Carelon";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-purple-100 relative overflow-hidden">
@@ -18,12 +37,19 @@ export default function Landing() {
       />
       
       <div className="absolute top-8 left-8">
-        <img 
-          src={carelonLogoImg} 
-          alt="Carelon Logo" 
-          className="h-12"
-          data-testid="img-carelon-logo"
-        />
+        {logoUrl ? (
+          <img 
+            src={logoUrl} 
+            alt={`${companyName} Logo`}
+            className="h-12"
+            data-testid="img-carelon-logo"
+          />
+        ) : (
+          <Building 
+            className="h-12 w-12 text-gray-900" 
+            data-testid="img-carelon-logo"
+          />
+        )}
       </div>
       
       <div className="relative min-h-screen flex items-center">

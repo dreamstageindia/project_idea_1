@@ -340,22 +340,7 @@ export default function Login() {
               />
             </div>
 
-            {/* Account Status */}
-            <div className={`p-3 rounded-md border ${isExistingUser ? 'border-green-200 bg-green-50' : 
-              isAutoCreateUser ? 'border-blue-200 bg-blue-50' : 
-              'border-red-200 bg-red-50'}`}>
-              <div className="flex items-center gap-2">
-                {getStatusIcon()}
-                <span className={`text-sm font-medium ${getStatusColor()}`}>
-                  {getStatusMessage()}
-                </span>
-              </div>
-              {isAutoCreateUser && fetchedName?.defaultPoints && (
-                <p className="text-xs text-blue-600 mt-1">
-                  Will receive {fetchedName.defaultPoints} starting points
-                </p>
-              )}
-            </div>
+            
 
             {/* Name Fields (if existing user) */}
             {isExistingUser && fetchedName && (
@@ -379,18 +364,7 @@ export default function Login() {
               </div>
             )}
 
-            {/* Auto-create Notice */}
-            {isAutoCreateUser && (
-              <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
-                <p className="text-sm text-blue-800">
-                  <strong>New Account Setup:</strong> This is your first login. Your account will be 
-                  automatically created with the email above.
-                  {fetchedName?.defaultPoints && (
-                    <span> You'll start with {fetchedName.defaultPoints} points.</span>
-                  )}
-                </p>
-              </div>
-            )}
+            
 
             {/* Domain Not Authorized Warning */}
             {!isDomainWhitelisted && (

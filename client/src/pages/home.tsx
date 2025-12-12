@@ -5,8 +5,8 @@ import { Header } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
-import { ArrowRight } from "lucide-react";
-import logo from '@assets/logo.png';
+import { ArrowRight, Building } from "lucide-react";
+import bgImage from '@assets/bg_3.png';
 
 type Branding = {
   id: string;
@@ -29,6 +29,7 @@ export default function Home() {
 
   const companyName = branding?.companyName || "Carelon";
   const primaryColor = branding?.primaryColor || "#1e40af";
+  const logoUrl = branding?.logoUrl || null;
 
   const options = [
     {
@@ -96,10 +97,24 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex flex-col">
-      <Header />
+    <div 
+      className="min-h-screen flex flex-col relative"
+      style={{
+        backgroundImage: `url(${bgImage})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+        backgroundAttachment: 'fixed'
+      }}
+    >
+      {/* Overlay for better readability */}
+      <div className="absolute inset-0 bg-gradient-to-br from-blue-50/80 via-white/80 to-purple-50/80 backdrop-blur-sm"></div>
       
-      <main className="flex-1 flex items-center justify-center p-8">
+      {/* Content */}
+      <div className="relative z-10 flex flex-col min-h-screen">
+        <Header />
+        
+        <main className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-4xl">
           {/* Main Title */}
           <div className="text-center mb-16">
@@ -143,11 +158,15 @@ export default function Home() {
             {/* Central Logo Area */}
             <div className="relative z-10 bg-white rounded-2xl shadow-2xl border border-gray-200 p-8 w-80 h-80 flex items-center justify-center transition-all duration-300 hover:shadow-3xl hover:scale-105">
               <div className="text-center">
-                <img
-                  src={logo}
-                  alt={`${companyName} Logo`}
-                  className="w-48 h-48 object-contain mx-auto mb-4"
-                />
+                {logoUrl ? (
+                  <img
+                    src={logoUrl}
+                    alt={`${companyName} Logo`}
+                    className="w-48 h-48 object-contain mx-auto"
+                  />
+                ) : (
+                  <Building className="w-48 h-48 text-gray-400 mx-auto" />
+                )}
               </div>
             </div>
 
@@ -204,6 +223,7 @@ export default function Home() {
       </main>
       
       <Footer />
+      </div>
     </div>
   );
 }

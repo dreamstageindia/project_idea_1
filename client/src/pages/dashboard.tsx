@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { SiApple, SiSamsung, SiSony, SiNike, SiAdidas, SiPuma } from "react-icons/si";
 
 // Import images
-import heroImg from '@assets/generated_images/corporate_gifting_hero_image.png';
+import heroImg from '@assets/element_1.png';
 import backpackImg from '@assets/generated_images/professional_laptop_backpack_product.png';
 
 type Branding = {

@@ -22,6 +22,15 @@ function getQueryParam(name: string): string | null {
 }
 
 type DeliveryMethod = "office" | "delivery";
+type AddressDetails = {
+  flatNumber: string;
+  buildingName: string;
+  street: string;
+  landmark: string;
+  city: string;
+  state: string;
+  pincode: string;
+};
 type CheckoutData = {
   deliveryMethod: DeliveryMethod;
   deliveryAddress?: string;
@@ -36,7 +45,15 @@ export default function Cart() {
   const [checkoutData, setCheckoutData] = useState<CheckoutData>({
     deliveryMethod: "office"
   });
-  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [addressDetails, setAddressDetails] = useState<AddressDetails>({
+    flatNumber: "",
+    buildingName: "",
+    street: "",
+    landmark: "",
+    city: "",
+    state: "",
+    pincode: ""
+  });
   const [, setLocation] = useLocation();
 
   const { data: cartItems = [] } = useQuery({
@@ -66,6 +83,30 @@ export default function Cart() {
   const userPoints = employee?.points ?? 0;
   const needsCopay = totalPointsRequired > userPoints;
   const copayInr = needsCopay ? Math.ceil((totalPointsRequired - userPoints) * inrPerPoint) : 0;
+
+  const formatAddress = (details: AddressDetails): string => {
+    const parts = [
+      details.flatNumber,
+      details.buildingName,
+      details.street,
+      details.landmark,
+      details.city,
+      details.state,
+      details.pincode
+    ].filter(part => part.trim() !== "");
+    return parts.join(", ");
+  };
+
+  const isAddressComplete = (): boolean => {
+    return !!(
+      addressDetails.flatNumber.trim() &&
+      addressDetails.street.trim() &&
+      addressDetails.city.trim() &&
+      addressDetails.state.trim() &&
+      addressDetails.pincode.trim() &&
+      /^\d{6}$/.test(addressDetails.pincode.trim())
+    );
+  };
 
   const updateQuantityMutation = useMutation({
     mutationFn: async ({ id, quantity }: { id: string; quantity: number }) => {
@@ -137,10 +178,10 @@ export default function Cart() {
   };
 
   const handleDeliveryConfirm = () => {
-    if (checkoutData.deliveryMethod === "delivery" && !deliveryAddress.trim()) {
+    if (checkoutData.deliveryMethod === "delivery" && !isAddressComplete()) {
       toast({ 
         title: "Error", 
-        description: "Please enter delivery address", 
+        description: "Please fill in all required address fields", 
         variant: "destructive" 
       });
       return;
@@ -148,16 +189,20 @@ export default function Cart() {
 
     setShowDeliveryDialog(false);
     
+    const deliveryAddress = checkoutData.deliveryMethod === "delivery" 
+      ? formatAddress(addressDetails) 
+      : undefined;
+
     if (needsCopay) {
       setCheckoutData(prev => ({
         ...prev,
-        deliveryAddress: checkoutData.deliveryMethod === "delivery" ? deliveryAddress : undefined
+        deliveryAddress
       }));
       setShowCopayPrompt(true);
     } else {
       const deliveryData = {
         deliveryMethod: checkoutData.deliveryMethod,
-        deliveryAddress: checkoutData.deliveryMethod === "delivery" ? deliveryAddress : undefined
+        deliveryAddress
       };
       checkoutMutation.mutate(deliveryData);
     }
@@ -173,7 +218,7 @@ export default function Cart() {
         },
         body: JSON.stringify({
           deliveryMethod: checkoutData.deliveryMethod,
-          deliveryAddress: checkoutData.deliveryMethod === "delivery" ? deliveryAddress : null,
+          deliveryAddress: checkoutData.deliveryMethod === "delivery" ? checkoutData.deliveryAddress : null,
         }),
       });
       if (!response.ok) {
@@ -201,8 +246,8 @@ export default function Cart() {
       if (merchantOrderId) {
         sessionStorage.setItem("PP_MERCHANT_ORDER_ID", merchantOrderId);
         sessionStorage.setItem("PP_DELIVERY_METHOD", checkoutData.deliveryMethod);
-        if (checkoutData.deliveryMethod === "delivery" && deliveryAddress) {
-          sessionStorage.setItem("PP_DELIVERY_ADDRESS", deliveryAddress);
+        if (checkoutData.deliveryMethod === "delivery" && checkoutData.deliveryAddress) {
+          sessionStorage.setItem("PP_DELIVERY_ADDRESS", checkoutData.deliveryAddress);
         }
       }
 
@@ -386,7 +431,7 @@ export default function Cart() {
       <Footer />
 
       <Dialog open={showDeliveryDialog} onOpenChange={setShowDeliveryDialog}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Select Delivery Method</DialogTitle>
             <DialogDescription>
@@ -399,7 +444,15 @@ export default function Cart() {
             onValueChange={(value: DeliveryMethod) => {
               setCheckoutData({ ...checkoutData, deliveryMethod: value });
               if (value === "office") {
-                setDeliveryAddress("");
+                setAddressDetails({
+                  flatNumber: "",
+                  buildingName: "",
+                  street: "",
+                  landmark: "",
+                  city: "",
+                  state: "",
+                  pincode: ""
+                });
               }
             }}
             className="space-y-4"
@@ -417,33 +470,115 @@ export default function Cart() {
               </div>
             </div>
             
-            <div className="flex items-center space-x-3 border rounded-lg p-4 hover:bg-accent cursor-pointer">
-              <RadioGroupItem value="delivery" id="delivery" />
-              <div className="flex-1">
-                <Label htmlFor="delivery" className="flex items-center gap-2 cursor-pointer">
-                  <MapPin className="h-5 w-5" />
-                  <span className="font-medium">Home Delivery</span>
-                </Label>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Get your order delivered to your preferred address
-                </p>
-                
-                {checkoutData.deliveryMethod === "delivery" && (
-                  <div className="mt-4 space-y-3">
-                    <Label htmlFor="delivery-address">Delivery Address</Label>
-                    <Textarea
-                      id="delivery-address"
-                      placeholder="Enter your complete address including:\n- House/Flat number\n- Street name\n- Landmark\n- City\n- State\n- PIN Code"
-                      value={deliveryAddress}
-                      onChange={(e) => setDeliveryAddress(e.target.value)}
-                      rows={4}
-                      className="resize-none"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Please provide complete address for accurate delivery
-                    </p>
-                  </div>
-                )}
+            <div className="border rounded-lg p-4 hover:bg-accent">
+              <div className="flex items-start space-x-3">
+                <RadioGroupItem value="delivery" id="delivery" className="mt-1" />
+                <div className="flex-1">
+                  <Label htmlFor="delivery" className="flex items-center gap-2 cursor-pointer">
+                    <MapPin className="h-5 w-5" />
+                    <span className="font-medium">Home Delivery</span>
+                  </Label>
+                  <p className="text-sm text-muted-foreground mt-1 mb-4">
+                    Get your order delivered to your preferred address
+                  </p>
+                  
+                  {checkoutData.deliveryMethod === "delivery" && (
+                    <div className="space-y-4 mt-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="flatNumber">
+                            Flat/House No. <span className="text-red-500">*</span>
+                          </Label>
+                          <Input
+                            id="flatNumber"
+                            placeholder="e.g., 101"
+                            value={addressDetails.flatNumber}
+                            onChange={(e) => setAddressDetails({ ...addressDetails, flatNumber: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="buildingName">Building/Apartment Name</Label>
+                          <Input
+                            id="buildingName"
+                            placeholder="e.g., Green Valley"
+                            value={addressDetails.buildingName}
+                            onChange={(e) => setAddressDetails({ ...addressDetails, buildingName: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="street">
+                          Street/Area <span className="text-red-500">*</span>
+                        </Label>
+                        <Input
+                          id="street"
+                          placeholder="e.g., MG Road, Sector 14"
+                          value={addressDetails.street}
+                          onChange={(e) => setAddressDetails({ ...addressDetails, street: e.target.value })}
+                        />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="landmark">Landmark</Label>
+                        <Input
+                          id="landmark"
+                          placeholder="e.g., Near Metro Station"
+                          value={addressDetails.landmark}
+                          onChange={(e) => setAddressDetails({ ...addressDetails, landmark: e.target.value })}
+                        />
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="city">
+                            City <span className="text-red-500">*</span>
+                          </Label>
+                          <Input
+                            id="city"
+                            placeholder="e.g., Mumbai"
+                            value={addressDetails.city}
+                            onChange={(e) => setAddressDetails({ ...addressDetails, city: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="state">
+                            State <span className="text-red-500">*</span>
+                          </Label>
+                          <Input
+                            id="state"
+                            placeholder="e.g., Maharashtra"
+                            value={addressDetails.state}
+                            onChange={(e) => setAddressDetails({ ...addressDetails, state: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="pincode">
+                          PIN Code <span className="text-red-500">*</span>
+                        </Label>
+                        <Input
+                          id="pincode"
+                          placeholder="e.g., 400001"
+                          value={addressDetails.pincode}
+                          onChange={(e) => {
+                            const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                            setAddressDetails({ ...addressDetails, pincode: value });
+                          }}
+                          maxLength={6}
+                        />
+                        {addressDetails.pincode && !/^\d{6}$/.test(addressDetails.pincode) && (
+                          <p className="text-xs text-red-500">PIN code must be 6 digits</p>
+                        )}
+                      </div>
+                      
+                      <p className="text-xs text-muted-foreground">
+                        <span className="text-red-500">*</span> Required fields
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </RadioGroup>
@@ -452,7 +587,10 @@ export default function Cart() {
             <Button variant="outline" onClick={() => setShowDeliveryDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleDeliveryConfirm} disabled={checkoutData.deliveryMethod === "delivery" && !deliveryAddress.trim()}>
+            <Button 
+              onClick={handleDeliveryConfirm} 
+              disabled={checkoutData.deliveryMethod === "delivery" && !isAddressComplete()}
+            >
               Confirm Delivery Method
             </Button>
           </div>
@@ -482,11 +620,11 @@ export default function Cart() {
                   <MapPin className="h-4 w-4 mt-0.5" />
                   <span>
                     Home Delivery
-                    {deliveryAddress && (
+                    {checkoutData.deliveryAddress && (
                       <>
                         <br />
                         <span className="text-xs mt-1 block p-2 bg-muted rounded">
-                          {deliveryAddress}
+                          {checkoutData.deliveryAddress}
                         </span>
                       </>
                     )}

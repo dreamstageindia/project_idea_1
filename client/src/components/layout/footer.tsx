@@ -84,10 +84,10 @@ export function Footer() {
               <div className="flex items-center text-gray-600">
                 <Mail className="mr-3 h-4 w-4" />
                 <a 
-                  href="mailto:support@carelon.com" 
+                  href="mailto:support@sunmobility.com" 
                   className="text-sm hover:text-gray-900 transition-colors"
                 >
-                  support@carelon.com
+                  support@sunmobility.com
                 </a>
               </div>
               
