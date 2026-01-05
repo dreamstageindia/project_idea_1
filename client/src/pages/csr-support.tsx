@@ -294,70 +294,7 @@ export default function CSRSupportPage() {
           </div>
         )}
 
-        {/* CSR Info Section */}
-        <Card className="mt-16 bg-gradient-to-r from-green-50 to-teal-50 border-green-200">
-          <CardContent className="p-8">
-            <div className="grid md:grid-cols-2 gap-8 items-center">
-              <div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-4">
-                  About Our CSR Initiative
-                </h3>
-                <p className="text-gray-700 mb-4">
-                  Our Corporate Social Responsibility program focuses on creating positive social impact 
-                  through carefully selected products. These items are chosen based on their environmental 
-                  sustainability, ethical production standards, and community benefits.
-                </p>
-                <p className="text-gray-700 mb-4">
-                  By designating specific products for CSR support, we ensure that every purchase contributes 
-                  to our broader mission of social responsibility and sustainable development.
-                </p>
-                <p className="text-gray-700">
-                  <strong>Note:</strong> CSR Support products are informational only and are not available 
-                  for purchase through the regular employee portal. For inquiries about CSR products, 
-                  please contact our CSR department.
-                </p>
-              </div>
-              <div className="space-y-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center shrink-0">
-                    <span className="text-green-600 font-bold">✓</span>
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-gray-900">Environmental Impact</h4>
-                    <p className="text-sm text-gray-600">Reduced carbon footprint and sustainable materials</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center shrink-0">
-                    <span className="text-blue-600 font-bold">✓</span>
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-gray-900">Community Support</h4>
-                    <p className="text-sm text-gray-600">Products that benefit local communities</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center shrink-0">
-                    <span className="text-purple-600 font-bold">✓</span>
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-gray-900">Ethical Standards</h4>
-                    <p className="text-sm text-gray-600">Fair labor practices and ethical sourcing</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center shrink-0">
-                    <span className="text-amber-600 font-bold">✓</span>
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-gray-900">Transparent Reporting</h4>
-                    <p className="text-sm text-gray-600">Regular CSR impact reports and audits</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+       
       </div>
       
       <Footer />

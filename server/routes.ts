@@ -1307,7 +1307,28 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Add this endpoint to get all campaign products
   app.get("/api/admin/all-campaign-products", async (_req, res) => {
     try {
-      const allCampaignProducts = await storage.getAllCampaignProducts();
+      // Get all campaigns
+      const campaigns = await storage.getAllCampaigns();
+      
+      // Get products for all campaigns
+      const allCampaignProducts: any[] = [];
+      
+      for (const campaign of campaigns) {
+        const campaignProducts = await storage.getCampaignProducts(campaign.id);
+        
+        campaignProducts.forEach(cp => {
+          // Add campaign product relationship info
+          allCampaignProducts.push({
+            campaignProduct: {
+              id: cp.campaignProduct?.id || '',
+              campaignId: campaign.id,
+              productId: cp.product.id,
+              createdAt: cp.campaignProduct?.createdAt || new Date().toISOString()
+            },
+            product: cp.product
+          });
+        });
+      }
       
       // Remove duplicates (same product might be in multiple campaigns)
       const uniqueProducts = new Map();

@@ -643,31 +643,21 @@ function CampaignHero({
 }) {
   return (
     <div 
-      className="relative min-h-[400px] rounded-2xl mx-4 mt-4 mb-8 overflow-hidden shadow-xl bg-gradient-to-br from-purple-50 via-blue-50 to-purple-100"
-      style={{
-        backgroundImage: `url(${heroBgImage})`,
-        backgroundSize: "100% auto",
-        backgroundPosition: "center",
-        backgroundRepeat: "no-repeat",
-      }}
-    >
-      <div className="relative z-10 h-full flex items-center justify-center text-center text-white py-16">
-        <div className="max-w-4xl px-6">
-          <div className="flex justify-center mb-4">
-            <Gift className="w-12 h-12 text-white drop-shadow-lg" />
-          </div>
-          <h1 className="text-5xl font-bold mb-4 drop-shadow-lg">
-            Special Campaigns
-          </h1>
-          <p className="text-2xl font-semibold mb-6 drop-shadow-lg">
-            {companyName} Exclusive Campaigns
-          </p>
-          <p className="text-xl opacity-90 drop-shadow-lg">
-            Select a campaign and choose your favorite product
-          </p>
-        </div>
-      </div>
-    </div>
+  className="relative min-h-[400px] rounded-2xl mx-4 mt-4 mb-8 overflow-hidden shadow-xl"
+  style={{
+    backgroundImage: `url(${heroBgImage})`,
+    backgroundSize: "100% auto",
+    backgroundPosition: "center",
+    backgroundRepeat: "no-repeat",
+  }}
+>
+  <div className="absolute inset-0 flex items-center justify-center text-center text-white z-10">
+    <h1 className="text-8xl font-bold drop-shadow-lg">
+      Special Occasions
+    </h1>
+  </div>
+</div>
+
   );
 }
 
@@ -991,37 +981,7 @@ export default function OccasionalCampaigns() {
           </>
         )}
 
-        {/* Order Instructions */}
-        <Card className="mt-12">
-          <CardHeader>
-            <CardTitle>How to Order from Campaigns</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="text-center">
-                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <span className="text-blue-600 font-bold text-xl">1</span>
-                </div>
-                <h4 className="font-semibold text-gray-900 mb-2">Select a Campaign</h4>
-                <p className="text-gray-600">Browse active campaigns and click on any campaign to view products</p>
-              </div>
-              <div className="text-center">
-                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <span className="text-blue-600 font-bold text-xl">2</span>
-                </div>
-                <h4 className="font-semibold text-gray-900 mb-2">Choose a Product</h4>
-                <p className="text-gray-600">Select one product from the campaign that you want to order</p>
-              </div>
-              <div className="text-center">
-                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <span className="text-blue-600 font-bold text-xl">3</span>
-                </div>
-                <h4 className="font-semibold text-gray-900 mb-2">Add to Cart & Checkout</h4>
-                <p className="text-gray-600">Add the product to your cart and proceed to checkout</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+       
       </div>
 
       {/* Products Modal */}

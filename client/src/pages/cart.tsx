@@ -457,7 +457,7 @@ export default function Cart() {
             }}
             className="space-y-4"
           >
-            <div className="flex items-center space-x-3 border rounded-lg p-4 hover:bg-accent cursor-pointer">
+            <div className="flex items-center space-x-3 border rounded-lg p-4  cursor-pointer">
               <RadioGroupItem value="office" id="office" />
               <div className="flex-1">
                 <Label htmlFor="office" className="flex items-center gap-2 cursor-pointer">
@@ -470,7 +470,7 @@ export default function Cart() {
               </div>
             </div>
             
-            <div className="border rounded-lg p-4 hover:bg-accent">
+            <div className="border rounded-lg p-4 ">
               <div className="flex items-start space-x-3">
                 <RadioGroupItem value="delivery" id="delivery" className="mt-1" />
                 <div className="flex-1">

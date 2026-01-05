@@ -9,13 +9,13 @@ import { ProductDetailModal } from "@/components/product/product-detail-modal";
 import { ConfirmationModal } from "@/components/admin/orders/confirmation-modal";
 import { OrderConfirmationModal } from "@/components/admin/orders/order-confirmation-modal";
 import { useAuth } from "@/hooks/use-auth";
-import { CheckCircle, X, ShoppingCart, Tag } from "lucide-react";
+import { CheckCircle, X, ShoppingCart, Tag, ArrowRight, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { SiApple, SiSamsung, SiSony, SiNike, SiAdidas, SiPuma } from "react-icons/si";
 
 // Import images
-import heroImg from '@assets/generated_images/corporate_gifting_hero_image.png';
+import element5Img from '@assets/element_5.png';
 import backpackImg from '@assets/generated_images/professional_laptop_backpack_product.png';
 
 type Branding = {
@@ -233,6 +233,78 @@ function Hero({ backgroundImage, companyName, employeeName }: {
   );
 }
 
+// New Hero Section with Yellow Background and Element 5 Image
+function YellowHero({ 
+  companyName, 
+  employeeName,
+  onSelectAllCategories 
+}: { 
+  companyName: string;
+  employeeName: string;
+  onSelectAllCategories: () => void;
+}) {
+  return (
+    <div className="relative bg-gradient-to-r from-yellow-400 via-yellow-300 to-amber-300 rounded-2xl overflow-hidden shadow-xl mb-8 min-h-[400px] md:min-h-[500px]">
+      <div className="absolute inset-0">
+        {/* Decorative elements */}
+        <div className="absolute top-0 left-0 w-32 h-32 bg-yellow-500/20 rounded-full -translate-x-16 -translate-y-16"></div>
+        <div className="absolute bottom-0 right-0 w-48 h-48 bg-amber-400/20 rounded-full translate-x-24 translate-y-24"></div>
+        <div className="absolute top-1/2 left-1/4 w-16 h-16 bg-yellow-500/30 rounded-full"></div>
+      </div>
+      
+      <div className="relative z-10 h-full flex flex-col md:flex-row items-center p-8 md:p-12">
+        {/* Left side - Text content */}
+        <div className="flex-1 text-center md:text-left mb-8 md:mb-0 md:pr-12">
+          <div className="inline-flex items-center justify-center md:justify-start space-x-2 mb-4">
+            <Sparkles className="h-6 w-6 text-amber-700" />
+            <span className="text-amber-800 font-semibold text-sm uppercase tracking-wider">
+              Corporate Gifting
+            </span>
+          </div>
+          
+          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 mb-4 leading-tight">
+            Unboxing Happiness
+            <span className="block text-amber-700">!!</span>
+          </h1>
+          
+          
+          
+          <div className="flex flex-col sm:flex-row gap-4">
+            <Button
+              onClick={onSelectAllCategories}
+              size="lg"
+              className="bg-gray-900 hover:bg-black text-white font-semibold px-8 py-3 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all duration-300 group"
+            >
+              Browse All Products
+              <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              className="bg-white/90 hover:bg-white text-gray-900 border-gray-900/20 font-semibold px-8 py-3 rounded-xl text-lg backdrop-blur-sm"
+            >
+              Explore Categories
+            </Button>
+          </div>
+        </div>
+        
+        {/* Right side - Element 5 image */}
+        <div className="flex-1 flex items-center justify-center">
+          <div className="relative w-full max-w-md">
+            <div className="absolute -inset-4 bg-white/30 rounded-full blur-xl"></div>
+            <img 
+              src={element5Img} 
+              alt="Corporate Gifting Elements" 
+              className="relative w-full h-auto object-contain transform hover:scale-105 transition-transform duration-300"
+              style={{ filter: 'drop-shadow(0 10px 30px rgba(0,0,0,0.1))' }}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SimplePrompt({
   open,
   onClose,
@@ -318,6 +390,7 @@ export default function Dashboard() {
   const [showRecordedPrompt, setShowRecordedPrompt] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [hasUserSelectedCategory, setHasUserSelectedCategory] = useState(false);
 
   const { data: branding } = useQuery<Branding>({
     queryKey: ["/api/admin/branding"],
@@ -330,7 +403,6 @@ export default function Dashboard() {
   // Fetch all campaign products
   const { data: campaignProducts = [] } = useQuery<CampaignProduct[]>({
     queryKey: ["/api/admin/campaign-products"],
-    // Create a new endpoint to get all campaign products
     queryFn: async () => {
       const response = await fetch("/api/admin/all-campaign-products");
       if (!response.ok) throw new Error("Failed to fetch campaign products");
@@ -339,10 +411,6 @@ export default function Dashboard() {
   });
 
   const companyName = branding?.companyName || "TechCorp";
-  const primary = branding?.primaryColor || "#1e40af";
-  const accent = branding?.accentColor || "#f97316";
-  const bannerUrl = branding?.bannerUrl || null;
-  const bannerText = branding?.bannerText || "";
   const inrPerPoint = parseFloat(branding?.inrPerPoint || "1");
   const maxSelections = branding?.maxSelectionsPerUser ?? 1;
 
@@ -357,7 +425,6 @@ export default function Dashboard() {
 
   const reachedLimit = maxSelections !== -1 && myOrders.length >= maxSelections;
 
-  // Get all product IDs that are in campaigns
   const campaignProductIds = useMemo(() => {
     return campaignProducts.map(cp => cp.product.id);
   }, [campaignProducts]);
@@ -372,11 +439,8 @@ export default function Dashboard() {
       .filter((p) => {
         if (!p.stock || p.stock <= 0) return false;
         if (!p.isBackup && originalsToHide.has(p.id)) return false;
-        
-        // Filter out products that are in campaigns
         if (campaignProductIds.includes(p.id)) return false;
         
-        // Filter by category
         if (selectedCategory !== "all") {
           const ids = p.categoryIds ?? [];
           if (ids.includes(selectedCategory)) return true;
@@ -508,9 +572,18 @@ export default function Dashboard() {
 
   const handleCategoryChange = useCallback((categoryId: string) => {
     setSelectedCategory(categoryId);
+    setHasUserSelectedCategory(true);
+  }, []);
+
+  const handleSelectAllCategories = useCallback(() => {
+    setSelectedCategory("all");
+    setHasUserSelectedCategory(true);
   }, []);
 
   const maxDisplay = maxSelections === -1 ? "∞" : maxSelections;
+
+  // Determine if we should show the yellow hero
+  const shouldShowYellowHero = selectedCategory === "all" && !hasUserSelectedCategory;
 
   return (
     <div className="min-h-screen bg-background">
@@ -567,13 +640,7 @@ export default function Dashboard() {
         </div>
       ) : (
         <>
-          <Hero 
-            backgroundImage={heroImg}
-            companyName={companyName}
-            employeeName={employee?.firstName || "User"}
-          />
-          
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <div className="flex flex-col lg:flex-row gap-8">
               {/* Categories Sidebar */}
               <CategorySidebar 
@@ -584,44 +651,57 @@ export default function Dashboard() {
               
               {/* Products Grid */}
               <main className="flex-1">
+                {/* Show Yellow Hero when no category has been selected yet */}
+                {shouldShowYellowHero ? (
+                  <YellowHero 
+                    companyName={companyName}
+                    employeeName={employee?.firstName || "Employee"}
+                    onSelectAllCategories={handleSelectAllCategories}
+                  />
+                ) : null}
                 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6 mb-8">
-                  {displayProducts.length > 0 ? (
-                    displayProducts.map((product) => (
-                      <ProductCard
-                        key={product.id}
-                        product={product}
-                        onView={handleViewProduct}
-                        onAddToCart={handleAddToCart}
-                      />
-                    ))
-                  ) : (
-                    <div className="col-span-full text-center py-12">
-                      <ShoppingCart className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                      <h3 className="text-lg font-semibold text-muted-foreground mb-2">
-                        {campaignProducts.length > 0 
-                          ? "All regular products are in campaigns" 
-                          : "No products found"}
-                      </h3>
-                      <p className="text-muted-foreground">
-                        {selectedCategory === "all" 
-                          ? "Check the Campaigns section for exclusive offers!" 
-                          : "No products found in this category."}
-                      </p>
+                {/* Products Grid */}
+                {(hasUserSelectedCategory || displayProducts.length > 0) && (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6 mb-8">
+                      {displayProducts.length > 0 ? (
+                        displayProducts.map((product) => (
+                          <ProductCard
+                            key={product.id}
+                            product={product}
+                            onView={handleViewProduct}
+                            onAddToCart={handleAddToCart}
+                          />
+                        ))
+                      ) : (
+                        <div className="col-span-full text-center py-12">
+                          <ShoppingCart className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+                          <h3 className="text-lg font-semibold text-muted-foreground mb-2">
+                            {campaignProducts.length > 0 
+                              ? "All regular products are in campaigns" 
+                              : "No products found"}
+                          </h3>
+                          <p className="text-muted-foreground">
+                            {selectedCategory === "all" 
+                              ? "Check the Campaigns section for exclusive offers!" 
+                              : "No products found in this category."}
+                          </p>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-                
-                {displayProducts.length > 0 && (
-                  <div className="flex justify-center">
-                    <Button 
-                      size="lg" 
-                      className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-8 py-3 rounded-xl"
-                      data-testid="button-view-more"
-                    >
-                      VIEW MORE
-                    </Button>
-                  </div>
+                    
+                    {displayProducts.length > 0 && (
+                      <div className="flex justify-center">
+                        <Button 
+                          size="lg" 
+                          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-8 py-3 rounded-xl"
+                          data-testid="button-view-more"
+                        >
+                          VIEW MORE
+                        </Button>
+                      </div>
+                    )}
+                  </>
                 )}
               </main>
             </div>
@@ -704,4 +784,4 @@ export default function Dashboard() {
       </SimplePrompt>
     </div>
   );
-} 
+}
