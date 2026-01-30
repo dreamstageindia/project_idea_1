@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,12 +6,12 @@ import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { OTPVerificationModal } from "@/components/auth/otp-verification-modal";
-import { Mail, ArrowRight, CheckCircle, XCircle, Loader2, Shield, Building } from "lucide-react";
+import { ArrowRight, CheckCircle, XCircle, Loader2, Shield, Building } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import bgImage from '@assets/bg_2.png';
+import virtusaBg2 from "@assets/virtusa_bg_2.png";
 
 type Branding = {
   id: string;
@@ -57,11 +56,11 @@ export default function Login() {
     domain: any;
     isLoading: boolean;
     checked: boolean;
-  }>({ 
-    isWhitelisted: false, 
-    domain: null, 
+  }>({
+    isWhitelisted: false,
+    domain: null,
     isLoading: false,
-    checked: false 
+    checked: false,
   });
 
   const { toast } = useToast();
@@ -69,9 +68,11 @@ export default function Login() {
   const [, setLocation] = useLocation();
 
   const { data: branding } = useQuery<Branding>({ queryKey: ["/api/admin/branding"] });
-  const primary = branding?.primaryColor || "#1e40af";
-  const accent = branding?.accentColor || "#f97316";
-  const company = branding?.companyName || "Carelon";
+
+  // Virtusa-like defaults
+  const primary = branding?.primaryColor || "#053354"; // deep navy
+  const accent = branding?.accentColor || "#02F576"; // neon green
+  const company = branding?.companyName || "Virtusa";
   const logoUrl = branding?.logoUrl || null;
 
   useEffect(() => {
@@ -83,37 +84,29 @@ export default function Login() {
   // Check domain when email changes
   useEffect(() => {
     const checkDomain = async () => {
-      const emailDomain = email.split('@')[1];
+      const emailDomain = email.split("@")[1];
       if (!emailDomain) {
-        setDomainStatus({ 
-          isWhitelisted: false, 
-          domain: null, 
-          isLoading: false,
-          checked: false 
-        });
+        setDomainStatus({ isWhitelisted: false, domain: null, isLoading: false, checked: false });
         return;
       }
 
-      setDomainStatus(prev => ({ ...prev, isLoading: true }));
-      
+      setDomainStatus((prev) => ({ ...prev, isLoading: true }));
+
       try {
         const response = await fetch(`/api/auth/check-domain/${emailDomain}`);
         if (response.ok) {
           const data: DomainCheckResult = await response.json();
-          setDomainStatus({ 
-            isWhitelisted: data.isWhitelisted, 
+          setDomainStatus({
+            isWhitelisted: data.isWhitelisted,
             domain: data.domain,
             isLoading: false,
-            checked: true 
+            checked: true,
           });
+        } else {
+          setDomainStatus({ isWhitelisted: false, domain: null, isLoading: false, checked: true });
         }
-      } catch (error) {
-        setDomainStatus({ 
-          isWhitelisted: false, 
-          domain: null, 
-          isLoading: false,
-          checked: true 
-        });
+      } catch {
+        setDomainStatus({ isWhitelisted: false, domain: null, isLoading: false, checked: true });
       }
     };
 
@@ -128,16 +121,17 @@ export default function Login() {
       return res.json();
     },
     onSuccess: (data) => {
-      setPrefill(fetchedName ? {
-        firstName: fetchedName.firstName || "",
-        lastName: fetchedName.lastName || ""
-      } : { firstName: "", lastName: "" });
+      setPrefill(
+        fetchedName
+          ? { firstName: fetchedName.firstName || "", lastName: fetchedName.lastName || "" }
+          : { firstName: "", lastName: "" }
+      );
       setShowConfirmModal(false);
       setShowVerificationModal(true);
-      toast({ 
-        title: "OTP sent", 
+      toast({
+        title: "OTP sent",
         description: data.message || "Please check your email",
-        variant: data.isNewUser ? "default" : "default"
+        variant: "default",
       });
     },
     onError: (err: any) => {
@@ -158,10 +152,7 @@ export default function Login() {
     },
     onSuccess: (data) => {
       login(data.token, data.employee, data.expiresAt);
-      toast({ 
-        title: "Login Successful", 
-        description: `Welcome, ${data.employee.firstName}!` 
-      });
+      toast({ title: "Login Successful", description: `Welcome, ${data.employee.firstName}!` });
       setShowVerificationModal(false);
       setLocation("/home");
     },
@@ -175,19 +166,14 @@ export default function Login() {
         remaining = json?.remainingAttempts;
         isLocked = json?.isLocked;
       } catch {}
+
       if (isLocked) {
-        toast({
-          title: "Unsuccessful attempts .. Please contact HR Team !!",
-          variant: "destructive",
-        });
+        toast({ title: "Unsuccessful attempts .. Please contact HR Team !!", variant: "destructive" });
         setShowVerificationModal(false);
         return;
       }
       if (remaining === 1) {
-        toast({
-          title: "One attempt left .. Please enter the correct OTP !!",
-          variant: "destructive",
-        });
+        toast({ title: "One attempt left .. Please enter the correct OTP !!", variant: "destructive" });
         return;
       }
       toast({ title: "Verification Failed", description: message, variant: "destructive" });
@@ -197,29 +183,22 @@ export default function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const normalizedEmail = email.trim().toLowerCase();
-    
+
     if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
-      toast({ 
-        title: "Error", 
-        description: "Please enter a valid email address", 
-        variant: "destructive" 
-      });
+      toast({ title: "Error", description: "Please enter a valid email address", variant: "destructive" });
       return;
     }
 
-    // Check domain authorization first
     if (domainStatus.checked && !domainStatus.isWhitelisted) {
-      toast({ 
-        title: "Domain Not Authorized", 
-        description: "Your email domain is not authorized to access this platform.", 
-        variant: "destructive" 
+      toast({
+        title: "Domain Not Authorized",
+        description: "Your email domain is not authorized to access this platform.",
+        variant: "destructive",
       });
       return;
     }
 
-    // If domain allows auto-creation without checking user existence, go directly to OTP
     if (domainStatus.domain?.autoCreateUser && domainStatus.domain?.canLoginWithoutEmployeeId) {
-      // Auto-create flow - send OTP directly
       setConfirmEmail(normalizedEmail);
       setFetchedName({
         firstName: "",
@@ -227,13 +206,12 @@ export default function Login() {
         exists: false,
         domainWhitelisted: true,
         autoCreate: true,
-        defaultPoints: domainStatus.domain.defaultPoints || 0
+        defaultPoints: domainStatus.domain.defaultPoints || 0,
       });
       setShowConfirmModal(true);
       return;
     }
 
-    // For existing users or domains that require pre-registration
     setConfirmEmail(normalizedEmail);
     setFetchedName(null);
     setShowConfirmModal(true);
@@ -242,42 +220,28 @@ export default function Login() {
     try {
       const res = await fetch(`/api/auth/lookup-by-email?email=${encodeURIComponent(normalizedEmail)}`, {
         method: "GET",
-        headers: { "accept": "application/json" },
+        headers: { accept: "application/json" },
       });
       if (res.ok) {
         const data: LookupResponse = await res.json();
         setFetchedName(data);
-        
+
         if (!data.exists && !data.autoCreate && !data.domainWhitelisted) {
-          toast({ 
-            title: "Account Not Found", 
-            description: "No account exists for this email. Please contact your administrator.", 
-            variant: "destructive" 
+          toast({
+            title: "Account Not Found",
+            description: "No account exists for this email. Please contact your administrator.",
+            variant: "destructive",
           });
           setShowConfirmModal(false);
         }
       } else if (res.status === 404) {
-        setFetchedName({
-          firstName: "",
-          lastName: "",
-          exists: false,
-          domainWhitelisted: false,
-          autoCreate: false
-        });
+        setFetchedName({ firstName: "", lastName: "", exists: false, domainWhitelisted: false, autoCreate: false });
       } else {
         const msg = await res.text();
-        toast({ 
-          title: "Lookup failed", 
-          description: msg || "Unable to fetch user information.", 
-          variant: "destructive" 
-        });
+        toast({ title: "Lookup failed", description: msg || "Unable to fetch user information.", variant: "destructive" });
       }
     } catch (err: any) {
-      toast({ 
-        title: "Lookup error", 
-        description: err?.message || "Unable to fetch user information.", 
-        variant: "destructive" 
-      });
+      toast({ title: "Lookup error", description: err?.message || "Unable to fetch user information.", variant: "destructive" });
     } finally {
       setIsFetchingName(false);
     }
@@ -287,132 +251,70 @@ export default function Login() {
     const isAutoCreateUser = fetchedName?.autoCreate && !fetchedName?.exists;
     const isExistingUser = fetchedName?.exists;
     const isDomainWhitelisted = fetchedName?.domainWhitelisted || domainStatus.isWhitelisted;
-    
-    const canProceed = isFetchingName ? false : 
-      isExistingUser ? true : // Existing users can always proceed
-      isAutoCreateUser ? true : // Auto-create users can proceed
-      false; // Others cannot
 
-    const getStatusMessage = () => {
-      if (isFetchingName) return "Checking account status...";
-      if (isExistingUser) return "Existing account found";
-      if (isAutoCreateUser) return "New user - Account will be created automatically";
-      if (!isDomainWhitelisted) return "Domain not authorized";
-      return "Account not found";
-    };
-
-    const getStatusColor = () => {
-      if (isFetchingName) return "text-gray-600";
-      if (isExistingUser) return "text-green-600";
-      if (isAutoCreateUser) return "text-blue-600";
-      if (!isDomainWhitelisted) return "text-red-600";
-      return "text-amber-600";
-    };
-
-    const getStatusIcon = () => {
-      if (isFetchingName) return <Loader2 className="h-4 w-4 animate-spin" />;
-      if (isExistingUser) return <CheckCircle className="h-4 w-4" />;
-      if (isAutoCreateUser) return <Shield className="h-4 w-4" />;
-      return <XCircle className="h-4 w-4" />;
-    };
+    const canProceed = isFetchingName ? false : isExistingUser ? true : isAutoCreateUser ? true : false;
 
     return (
       <Dialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
-        <DialogContent className="max-w-md rounded-lg">
+        <DialogContent className="max-w-md rounded-2xl border border-white/10 bg-[#071f33]/90 text-white backdrop-blur-md">
           <DialogHeader>
-            <DialogTitle>Confirm Login</DialogTitle>
-            <DialogDescription>
-              Verify your email and account details
-            </DialogDescription>
+            <DialogTitle className="text-white">Confirm Login</DialogTitle>
+            <DialogDescription className="text-white/70">Verify your email and account details</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
-            {/* Email Display */}
             <div>
-              <Label htmlFor="confirm-email">Email Address</Label>
-              <Input
-                id="confirm-email"
-                type="email"
-                value={confirmEmail}
-                readOnly
-                className="bg-gray-50"
-              />
+              <Label htmlFor="confirm-email" className="text-white/80">
+                Email Address
+              </Label>
+              <Input id="confirm-email" type="email" value={confirmEmail} readOnly className="bg-white/10 text-white border-white/15" />
             </div>
 
-            
-
-            {/* Name Fields (if existing user) */}
             {isExistingUser && fetchedName && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label>First Name</Label>
-                  <Input 
-                    value={fetchedName.firstName || ""} 
-                    readOnly 
-                    className="bg-gray-50"
-                  />
+                  <Label className="text-white/80">First Name</Label>
+                  <Input value={fetchedName.firstName || ""} readOnly className="bg-white/10 text-white border-white/15" />
                 </div>
                 <div>
-                  <Label>Last Name</Label>
-                  <Input 
-                    value={fetchedName.lastName || ""} 
-                    readOnly 
-                    className="bg-gray-50"
-                  />
+                  <Label className="text-white/80">Last Name</Label>
+                  <Input value={fetchedName.lastName || ""} readOnly className="bg-white/10 text-white border-white/15" />
                 </div>
               </div>
             )}
 
-            
-
-            {/* Domain Not Authorized Warning */}
             {!isDomainWhitelisted && (
-              <div className="bg-red-50 border border-red-200 rounded-md p-3">
-                <p className="text-sm text-red-800">
-                  <strong>Domain Not Authorized:</strong> Your email domain is not authorized 
-                  to access this platform. Please contact your administrator.
+              <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3">
+                <p className="text-sm text-red-200">
+                  <strong>Domain Not Authorized:</strong> Your email domain is not authorized to access this platform.
                 </p>
               </div>
             )}
           </div>
 
           <div className="mt-6 flex justify-end gap-2">
-            <Button 
-              variant="secondary" 
-              onClick={() => setShowConfirmModal(false)}
-            >
+            <Button variant="secondary" onClick={() => setShowConfirmModal(false)} className="rounded-full">
               Cancel
             </Button>
             <Button
               onClick={() => {
                 const finalEmail = confirmEmail.trim().toLowerCase();
                 if (!finalEmail || !isValidEmail(finalEmail)) {
-                  toast({ 
-                    title: "Invalid email", 
-                    description: "Please check the email address.", 
-                    variant: "destructive" 
-                  });
+                  toast({ title: "Invalid email", description: "Please check the email address.", variant: "destructive" });
                   return;
                 }
                 if (!canProceed) {
-                  toast({ 
-                    title: "Cannot Proceed", 
-                    description: "Your account cannot be created or accessed.", 
-                    variant: "destructive" 
-                  });
+                  toast({ title: "Cannot Proceed", description: "Your account cannot be created or accessed.", variant: "destructive" });
                   return;
                 }
                 setEmail(finalEmail);
                 sendOtpMutation.mutate({ email: finalEmail });
               }}
               disabled={!canProceed || sendOtpMutation.isPending}
-              style={{ backgroundColor: primary, borderColor: primary }}
+              className="rounded-full"
+              style={{ backgroundColor: accent, color: primary }}
             >
-              {sendOtpMutation.isPending
-                ? "Sending OTP..."
-                : isAutoCreateUser
-                ? "Create Account & Send OTP"
-                : "Send OTP"}
+              {sendOtpMutation.isPending ? "Sending OTP..." : isAutoCreateUser ? "Create Account & Send OTP" : "Send OTP"}
             </Button>
           </div>
         </DialogContent>
@@ -420,98 +322,83 @@ export default function Login() {
     );
   }
 
-  const isEmailValid = email.includes('@') && email.includes('.');
-  const emailDomain = email.split('@')[1];
-  const canLogin = isEmailValid && 
-    (domainStatus.checked ? domainStatus.isWhitelisted : true) && 
-    !domainStatus.isLoading;
+  const isEmailValid = email.includes("@") && email.includes(".");
+  const emailDomain = email.split("@")[1];
+  const canLogin = isEmailValid && (domainStatus.checked ? domainStatus.isWhitelisted : true) && !domainStatus.isLoading;
 
   return (
     <div className="min-h-screen relative overflow-hidden">
-      {/* Background gradient layer */}
-      <div className="absolute inset-0 bg-gradient-to-br from-purple-50 via-blue-50 to-purple-100" />
-      
-      {/* Gradient pattern overlay */}
-      <div 
-        className="absolute inset-0 opacity-10"
-        style={{
-          backgroundImage: `radial-gradient(circle at 20% 50%, rgba(147, 51, 234, 0.1) 0%, transparent 50%),
-                           radial-gradient(circle at 80% 80%, rgba(147, 51, 234, 0.1) 0%, transparent 50%),
-                           radial-gradient(circle at 40% 20%, rgba(59, 130, 246, 0.1) 0%, transparent 50%)`,
-        }}
-      />
-      
-      {/* Full screen background image */}
-      <div 
+      {/* Background image */}
+      <div
         className="absolute inset-0"
         style={{
-          backgroundImage: `url(${bgImage})`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
+          backgroundImage: `url(${virtusaBg2})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
         }}
       />
-      
+
+      {/* Centered dark wash */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(circle at 30% 30%, rgba(2,245,118,0.10) 0%, transparent 55%), linear-gradient(180deg, rgba(5,51,84,0.85) 0%, rgba(5,51,84,0.92) 60%, rgba(5,51,84,0.96) 100%)",
+        }}
+      />
+
       {/* Logo */}
       <div className="absolute top-8 left-8 z-20">
         {logoUrl ? (
-          <img 
-            src={logoUrl} 
-            alt={`${company} Logo`}
-            className="h-12"
-            data-testid="img-carelon-logo"
-          />
+          <img src={logoUrl} alt={`${company} Logo`} className="h-10 md:h-12" data-testid="img-carelon-logo" />
         ) : (
-          <Building 
-            className="h-12 w-12 text-gray-900" 
-            data-testid="img-carelon-logo"
-          />
+          <Building className="h-10 w-10 md:h-12 md:w-12" style={{ color: "#FFFFFF" }} data-testid="img-carelon-logo" />
         )}
       </div>
-      
+
       {/* Content */}
       <div className="relative min-h-screen flex items-center justify-center p-4 z-10">
         <div className="w-full max-w-2xl text-center">
-          <h1 className="text-5xl font-bold text-primary mb-4" data-testid="text-login-title">
+          <h1 className="text-5xl font-semibold mb-3" style={{ color: "#FFFFFF" }} data-testid="text-login-title">
             Welcome
           </h1>
-          <p className="text-xl text-foreground mb-12" data-testid="text-login-subtitle">
-            Login your account
+          <p className="text-lg md:text-xl mb-10" style={{ color: "rgba(255,255,255,0.75)" }} data-testid="text-login-subtitle">
+            Login to your account
           </p>
-          
+
           {/* Domain Status Alert */}
           {emailDomain && domainStatus.checked && (
             <div className="mb-6 max-w-md mx-auto">
-              <Alert variant={domainStatus.isWhitelisted ? "default" : "destructive"}>
+              <Alert className={`border ${domainStatus.isWhitelisted ? "border-white/15 bg-white/5" : "border-red-500/30 bg-red-500/10"} text-white`}>
                 <div className="flex items-start gap-2">
                   {domainStatus.isLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin mt-0.5" />
                   ) : domainStatus.isWhitelisted ? (
-                    <CheckCircle className="h-4 w-4 text-green-600 mt-0.5" />
+                    <CheckCircle className="h-4 w-4 mt-0.5" style={{ color: accent }} />
                   ) : (
-                    <XCircle className="h-4 w-4 text-red-600 mt-0.5" />
+                    <XCircle className="h-4 w-4 text-red-300 mt-0.5" />
                   )}
-                  <AlertDescription className="text-sm">
+                  <AlertDescription className="text-sm text-white/80">
                     {domainStatus.isLoading ? (
                       "Checking domain authorization..."
                     ) : domainStatus.isWhitelisted ? (
                       <div className="space-y-1">
-                        <span className="font-medium">Domain authorized</span>
+                        <span className="font-medium" style={{ color: accent }}>
+                          Domain authorized
+                        </span>
                         {domainStatus.domain?.autoCreateUser && (
-                          <div className="text-xs text-muted-foreground">
+                          <div className="text-xs text-white/60">
                             New users from @{emailDomain} can auto-register
-                            {domainStatus.domain.defaultPoints > 0 && (
-                              <span> with {domainStatus.domain.defaultPoints} starting points</span>
-                            )}
+                            {domainStatus.domain.defaultPoints > 0 && <span> with {domainStatus.domain.defaultPoints} starting points</span>}
                           </div>
                         )}
                       </div>
                     ) : (
                       <div className="space-y-1">
-                        <span className="font-medium">Domain not authorized</span>
-                        <div className="text-xs">
-                          @{emailDomain} is not authorized to access this platform.
-                          Please contact your administrator.
+                        <span className="font-medium text-red-200">Domain not authorized</span>
+                        <div className="text-xs text-white/70">
+                          @{emailDomain} is not authorized to access this platform. Please contact your administrator.
                         </div>
                       </div>
                     )}
@@ -520,45 +407,46 @@ export default function Login() {
               </Alert>
             </div>
           )}
-          
-          <form onSubmit={handleSubmit} className="space-y-8">
-            <div className="text-left max-w-md mx-auto">
-              <Label htmlFor="email" className="text-lg mb-3 block">
-                Email Address*
-              </Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="your.name@company.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="h-14 bg-white text-lg rounded-lg"
-                data-testid="input-email"
-              />
-              {emailDomain && !domainStatus.checked && !domainStatus.isLoading && (
-                <p className="text-xs text-gray-500 mt-2">
-                  Enter a valid company email address
-                </p>
-              )}
-            </div>
-            
-            <Button 
-              type="submit" 
-              size="lg"
-              className="w-full max-w-md h-14 text-lg rounded-full mx-auto flex items-center justify-center gap-2"
-              data-testid="button-login"
-              style={{ backgroundColor: primary }}
-              disabled={sendOtpMutation.isPending || domainStatus.isLoading || !canLogin}
-            >
-              {sendOtpMutation.isPending ? "Sending..." : 
-               domainStatus.isLoading ? "Checking..." : 
-               "Log in"}
-              <ArrowRight className="h-5 w-5" />
-            </Button>
-          </form>
 
-          
+          {/* Form card */}
+          <div className="mx-auto max-w-xl rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur-md">
+            <form onSubmit={handleSubmit} className="space-y-7">
+              <div className="text-left">
+                <Label htmlFor="email" className="text-base mb-3 block text-white/80">
+                  Email Address*
+                </Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="your.name@company.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="h-14 bg-white/10 text-white border-white/15 rounded-xl placeholder:text-white/40"
+                  data-testid="input-email"
+                />
+                {emailDomain && !domainStatus.checked && !domainStatus.isLoading && (
+                  <p className="text-xs mt-2 text-white/55">Enter a valid company email address</p>
+                )}
+              </div>
+
+              <Button
+                type="submit"
+                size="lg"
+                className="w-full h-14 text-lg rounded-full flex items-center justify-center gap-2"
+                data-testid="button-login"
+                style={{ backgroundColor: accent, color: primary }}
+                disabled={sendOtpMutation.isPending || domainStatus.isLoading || !canLogin}
+              >
+                {sendOtpMutation.isPending ? "Sending..." : domainStatus.isLoading ? "Checking..." : "Log in"}
+                <ArrowRight className="h-5 w-5" />
+              </Button>
+
+              <p className="text-xs text-white/55">
+                By continuing, you agree to your organization’s access policies.
+              </p>
+            </form>
+          </div>
         </div>
       </div>
 

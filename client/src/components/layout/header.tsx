@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { Building, LogOut, Menu, X, ShoppingCart, History } from "lucide-react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
 
 type Branding = {
@@ -50,7 +50,7 @@ export function Header() {
     { id: "special-occasions", label: "Special Occasions", path: "/special-occasions" },
     { id: "bulk-buy", label: "CSR Support", path: "/csr" },
     { id: "csr-blog", label: "Blog", path: "/blog" },
-    
+
   ];
 
   const handleLogout = () => {
@@ -65,15 +65,17 @@ export function Header() {
           {/* Logo and Navigation */}
           <div className="flex items-center space-x-8">
             <div className="flex items-center space-x-3" data-testid="logo">
-              {logoUrl ? (
-                <img 
-                  src={logoUrl} 
-                  alt="Company logo" 
-                  className="w-40 h-auto object-contain rounded" 
-                />
-              ) : (
-                <Building className="text-gray-900 h-8 w-8" />
-              )}
+              <Link to="/home" className="cursor-pointer">
+                {logoUrl ? (
+                  <img
+                    src={logoUrl}
+                    alt="Company logo"
+                    className="w-40 h-auto object-contain rounded"
+                  />
+                ) : (
+                  <Building className="text-gray-900 h-8 w-8" />
+                )}
+              </Link>
             </div>
             <nav className="hidden md:flex items-center space-x-4">
               {navLinks.map((link) => (
@@ -92,8 +94,8 @@ export function Header() {
           {/* User Menu */}
           <div className="flex items-center space-x-4">
             <div className="relative">
-              <Button 
-                variant="ghost" 
+              <Button
+                variant="ghost"
                 onClick={() => setLocation("/cart")}
                 className="text-gray-700 hover:text-gray-900 hover:bg-gray-100"
               >
@@ -101,12 +103,12 @@ export function Header() {
                 {cartItemCount > 0 && (
                   <Badge
                     className="absolute -top-2 -right-2 bg-red-500 text-white"
-                    style={{ 
-                      minWidth: "1.5rem", 
-                      height: "1.5rem", 
-                      borderRadius: "50%", 
-                      display: "flex", 
-                      alignItems: "center", 
+                    style={{
+                      minWidth: "1.5rem",
+                      height: "1.5rem",
+                      borderRadius: "50%",
+                      display: "flex",
+                      alignItems: "center",
                       justifyContent: "center",
                       fontSize: "0.75rem"
                     }}
@@ -116,15 +118,15 @@ export function Header() {
                 )}
               </Button>
             </div>
-            
-            <Button 
-              variant="ghost" 
+
+            <Button
+              variant="ghost"
               onClick={() => setLocation("/my-orders")}
               className="text-gray-700 hover:text-gray-900 hover:bg-gray-100"
             >
               <History className="h-5 w-5" />
             </Button>
-            
+
             <div className="hidden sm:block text-right">
               <p className="font-medium text-gray-900" data-testid="text-user-name">
                 {employee?.firstName} {employee?.lastName}
@@ -136,11 +138,11 @@ export function Header() {
                 Points: {employee?.points ?? 0}
               </p>
             </div>
-            
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={handleLogout} 
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLogout}
               data-testid="button-logout"
               className="border-gray-300 text-gray-700 hover:bg-gray-50 hover:text-gray-900"
             >
@@ -187,7 +189,7 @@ export function Header() {
               <p className="text-sm text-gray-600">{employee?.employeeId}</p>
               <p className="text-sm text-gray-600">Points: {employee?.points ?? 0}</p>
             </div>
-            
+
             <Button
               variant="ghost"
               className="w-full justify-start text-gray-700 hover:text-gray-900 hover:bg-gray-100"
@@ -199,7 +201,7 @@ export function Header() {
               <ShoppingCart className="mr-2 h-4 w-4" />
               Cart {cartItemCount > 0 && `(${cartItemCount})`}
             </Button>
-            
+
             <Button
               variant="ghost"
               className="w-full justify-start text-gray-700 hover:text-gray-900 hover:bg-gray-100"
@@ -211,7 +213,7 @@ export function Header() {
               <History className="mr-2 h-4 w-4" />
               My Orders
             </Button>
-            
+
             <Button
               variant="outline"
               className="w-full justify-start text-gray-700 border-gray-300 hover:bg-gray-50"
