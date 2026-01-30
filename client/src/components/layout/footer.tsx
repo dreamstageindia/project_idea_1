@@ -65,13 +65,13 @@ export function Footer() {
                 </a>
               </li>
               <li>
-                <a href="/bulk-buy" className="text-gray-600 hover:text-gray-900 transition-colors text-sm">
-                  Bulk Buy
+                <a href="/blog" className="text-gray-600 hover:text-gray-900 transition-colors text-sm">
+                  Blogs
                 </a>
               </li>
               <li>
-                <a href="/csr-blog" className="text-gray-600 hover:text-gray-900 transition-colors text-sm">
-                  CSR & Blog
+                <a href="/csr" className="text-gray-600 hover:text-gray-900 transition-colors text-sm">
+                  CSR
                 </a>
               </li>
             </ul>
