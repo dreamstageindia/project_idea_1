@@ -7,6 +7,7 @@ import { Calendar, User, Eye, ArrowRight, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useState, useMemo } from "react";
 import { Link } from "wouter";
+import blogImage from '@assets/blog.jpg'; // Add this import
 
 type Blog = {
   id: string;
@@ -51,15 +52,21 @@ export default function BlogPage() {
     <div className="min-h-screen bg-gray-50">
       <Header />
       
-      {/* Hero Section */}
-      <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-          <div className="text-center">
-            <h1 className="text-5xl font-bold mb-6">Our Blog</h1>
-            <p className="text-xl opacity-90 max-w-3xl mx-auto">
-              Insights, stories, and updates from our team
-            </p>
-          </div>
+      {/* Hero Section with Blog Image */}
+      <div 
+        className="relative min-h-[400px] md:min-h-[500px] rounded-2xl mx-4 mt-4 mb-8 overflow-hidden shadow-xl"
+        style={{
+          backgroundImage: `url(${blogImage})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+        }}
+      >
+        {/* Optional gradient overlay for better text readability */}
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-900/30 via-transparent to-purple-900/30"></div>
+        
+        <div className="relative z-10 h-full flex flex-col items-center justify-center text-center text-white px-4">
+          
         </div>
       </div>
 

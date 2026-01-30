@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Package, Users, Heart, Globe, Shield } from "lucide-react";
 import type { Product } from "@/types/product";
+import csrImage from '@assets/csr.jpg'; // Add this import at the top
 
 function CSRProductCard({ product }: { product: Product }) {
   // Parse specifications if they come as a string
@@ -178,19 +179,23 @@ export default function CSRSupportPage() {
     <div className="min-h-screen bg-gradient-to-b from-green-50 to-white">
       <Header />
       
-      {/* Hero Section */}
-      <div className="bg-gradient-to-r from-green-600 to-teal-600 text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-          <div className="text-center">
-            <div className="flex justify-center mb-6">
-              <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center">
-                <Heart className="w-10 h-10 text-white" />
-              </div>
-            </div>
-            <h1 className="text-5xl font-bold mb-6">CSR Support Initiative</h1>
-            <p className="text-xl opacity-90 max-w-3xl mx-auto">
-              Our commitment to Corporate Social Responsibility through sustainable products and community support
-            </p>
+      {/* Hero Section with CSR Image */}
+      <div 
+        className="relative min-h-[400px] md:min-h-[500px] rounded-2xl mx-4 mt-4 mb-8 overflow-hidden shadow-xl"
+        style={{
+          backgroundImage: `url(${csrImage})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+        }}
+      >
+        {/* Optional gradient overlay for better text readability */}
+        <div className="absolute inset-0 bg-gradient-to-r from-green-900/30 via-transparent to-teal-900/30"></div>
+        
+        <div className="relative z-10 h-full flex items-center justify-center text-center text-white px-4">
+          <div className="max-w-4xl">
+            
+            
           </div>
         </div>
       </div>
@@ -198,7 +203,7 @@ export default function CSRSupportPage() {
       {/* Stats Section */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-8">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
-          <Card className="bg-white border-green-100">
+          <Card className="bg-white border-green-100 shadow-md">
             <CardContent className="pt-6 text-center">
               <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
                 <Package className="w-6 h-6 text-green-600" />
@@ -208,7 +213,7 @@ export default function CSRSupportPage() {
             </CardContent>
           </Card>
           
-          <Card className="bg-white border-blue-100">
+          <Card className="bg-white border-blue-100 shadow-md">
             <CardContent className="pt-6 text-center">
               <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
                 <Users className="w-6 h-6 text-blue-600" />
@@ -220,7 +225,7 @@ export default function CSRSupportPage() {
             </CardContent>
           </Card>
           
-          <Card className="bg-white border-purple-100">
+          <Card className="bg-white border-purple-100 shadow-md">
             <CardContent className="pt-6 text-center">
               <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
                 <Globe className="w-6 h-6 text-purple-600" />
@@ -230,7 +235,7 @@ export default function CSRSupportPage() {
             </CardContent>
           </Card>
           
-          <Card className="bg-white border-amber-100">
+          <Card className="bg-white border-amber-100 shadow-md">
             <CardContent className="pt-6 text-center">
               <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-3">
                 <Shield className="w-6 h-6 text-amber-600" />
@@ -252,16 +257,16 @@ export default function CSRSupportPage() {
             They represent our commitment to sustainability, community support, and ethical practices.
           </p>
           <div className="mt-6 flex flex-wrap justify-center gap-3">
-            <Badge variant="outline" className="bg-green-50 text-green-700">
+            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
               Eco-Friendly Materials
             </Badge>
-            <Badge variant="outline" className="bg-blue-50 text-blue-700">
+            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
               Community Support
             </Badge>
-            <Badge variant="outline" className="bg-purple-50 text-purple-700">
+            <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
               Sustainable Sourcing
             </Badge>
-            <Badge variant="outline" className="bg-amber-50 text-amber-700">
+            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
               Ethical Manufacturing
             </Badge>
           </div>
@@ -272,7 +277,7 @@ export default function CSRSupportPage() {
             <div className="text-gray-500">Loading CSR products...</div>
           </div>
         ) : csrProducts.length === 0 ? (
-          <Card className="max-w-2xl mx-auto">
+          <Card className="max-w-2xl mx-auto shadow-md">
             <CardContent className="py-12 text-center">
               <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Heart className="w-10 h-10 text-green-600" />
@@ -293,8 +298,6 @@ export default function CSRSupportPage() {
             ))}
           </div>
         )}
-
-       
       </div>
       
       <Footer />

@@ -11,6 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import heroBgImage from '@assets/element_1.png';
+// Add this import with other image imports at the top of the file
+import specialOccasionsImg from '@assets/special_occassions.jpg';
 
 type Campaign = {
   id: string;
@@ -635,7 +637,7 @@ function ProductCard({
   );
 }
 
-// Campaign Hero Component - Updated to use element_1.png without tint, full width
+// Campaign Hero Component - Updated to use special_occassions.jpg as background
 function CampaignHero({ 
   companyName 
 }: { 
@@ -643,21 +645,19 @@ function CampaignHero({
 }) {
   return (
     <div 
-  className="relative min-h-[400px] rounded-2xl mx-4 mt-4 mb-8 overflow-hidden shadow-xl"
-  style={{
-    backgroundImage: `url(${heroBgImage})`,
-    backgroundSize: "100% auto",
-    backgroundPosition: "center",
-    backgroundRepeat: "no-repeat",
-  }}
->
-  <div className="absolute inset-0 flex items-center justify-center text-center text-white z-10">
-    <h1 className="text-8xl font-bold drop-shadow-lg">
-      Special Occasions
-    </h1>
-  </div>
-</div>
-
+      className="relative min-h-[400px] md:min-h-[500px] rounded-2xl mx-4 mt-4 mb-8 overflow-hidden shadow-xl"
+      style={{
+        backgroundImage: `url(${specialOccasionsImg})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+      }}
+    >
+      <div className="absolute inset-0 bg-gradient-to-r from-black/30 via-transparent to-black/20"></div>
+      <div className="relative z-10 h-full flex items-center justify-center text-center text-white px-4">
+        
+      </div>
+    </div>
   );
 }
 

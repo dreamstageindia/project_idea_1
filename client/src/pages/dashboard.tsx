@@ -17,6 +17,7 @@ import { SiApple, SiSamsung, SiSony, SiNike, SiAdidas, SiPuma } from "react-icon
 // Import images
 import element5Img from '@assets/element_5.png';
 import backpackImg from '@assets/generated_images/professional_laptop_backpack_product.png';
+import specialOccasionsImg from '@assets/unboxing_happiness.jpg'; // Declared at top
 
 type Branding = {
   id: string;
@@ -233,8 +234,8 @@ function Hero({ backgroundImage, companyName, employeeName }: {
   );
 }
 
-// New Hero Section with Yellow Background and Element 5 Image
-function YellowHero({ 
+// Updated Special Occasions Hero Section
+function SpecialOccasionsHero({ 
   companyName, 
   employeeName,
   onSelectAllCategories 
@@ -244,63 +245,53 @@ function YellowHero({
   onSelectAllCategories: () => void;
 }) {
   return (
-    <div className="relative bg-gradient-to-r from-yellow-400 via-yellow-300 to-amber-300 rounded-2xl overflow-hidden shadow-xl mb-8 min-h-[400px] md:min-h-[500px]">
-      <div className="absolute inset-0">
-        {/* Decorative elements */}
-        <div className="absolute top-0 left-0 w-32 h-32 bg-yellow-500/20 rounded-full -translate-x-16 -translate-y-16"></div>
-        <div className="absolute bottom-0 right-0 w-48 h-48 bg-amber-400/20 rounded-full translate-x-24 translate-y-24"></div>
-        <div className="absolute top-1/2 left-1/4 w-16 h-16 bg-yellow-500/30 rounded-full"></div>
+    <div className="relative rounded-2xl overflow-hidden shadow-xl mb-8 min-h-[400px] md:min-h-[500px]">
+      {/* Background Image */}
+      <div 
+        className="absolute inset-0"
+        style={{
+          backgroundImage: `url(${specialOccasionsImg})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+        }}
+      >
+        {/* Optional overlay for better text readability */}
+        <div className="absolute inset-0 bg-gradient-to-r from-black/30 via-transparent to-black/20"></div>
       </div>
       
       <div className="relative z-10 h-full flex flex-col md:flex-row items-center p-8 md:p-12">
-        {/* Left side - Text content */}
-        <div className="flex-1 text-center md:text-left mb-8 md:mb-0 md:pr-12">
-          <div className="inline-flex items-center justify-center md:justify-start space-x-2 mb-4">
-            <Sparkles className="h-6 w-6 text-amber-700" />
-            <span className="text-amber-800 font-semibold text-sm uppercase tracking-wider">
-              Corporate Gifting
-            </span>
-          </div>
-          
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 mb-4 leading-tight">
-            Unboxing Happiness
-            <span className="block text-amber-700">!!</span>
-          </h1>
-          
-          
-          
-          <div className="flex flex-col sm:flex-row gap-4">
-            <Button
-              onClick={onSelectAllCategories}
-              size="lg"
-              className="bg-gray-900 hover:bg-black text-white font-semibold px-8 py-3 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all duration-300 group"
-            >
-              Browse All Products
-              <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
-            </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              className="bg-white/90 hover:bg-white text-gray-900 border-gray-900/20 font-semibold px-8 py-3 rounded-xl text-lg backdrop-blur-sm"
-            >
-              Explore Categories
-            </Button>
-          </div>
-        </div>
-        
-        {/* Right side - Element 5 image */}
-        <div className="flex-1 flex items-center justify-center">
-          <div className="relative w-full max-w-md">
-            <div className="absolute -inset-4 bg-white/30 rounded-full blur-xl"></div>
-            <img 
-              src={element5Img} 
-              alt="Corporate Gifting Elements" 
-              className="relative w-full h-auto object-contain transform hover:scale-105 transition-transform duration-300"
-              style={{ filter: 'drop-shadow(0 10px 30px rgba(0,0,0,0.1))' }}
-            />
-          </div>
-        </div>
-      </div>
+  {/* Left side - Text content removed */}
+  <div className="flex-1 text-center md:text-left mb-8 md:mb-0 md:pr-12">
+    {/* Empty space where text was */}
+  </div>
+  
+  {/* Right side - Element 5 image removed */}
+  <div className="flex-1 flex items-center justify-center">
+    {/* Empty space where image was */}
+  </div>
+  
+  {/* Buttons container - positioned absolutely at the bottom center */}
+  <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 w-full max-w-lg px-4">
+    <div className="flex flex-col sm:flex-row gap-4 justify-center">
+      <Button
+        onClick={onSelectAllCategories}
+        size="lg"
+        className="bg-white hover:bg-gray-100 text-gray-900 font-semibold px-8 py-3 rounded-xl text-lg shadow-lg hover:shadow-xl transition-all duration-300 group"
+      >
+        Browse All Products
+        <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
+      </Button>
+      <Button
+        size="lg"
+        variant="outline"
+        className="bg-transparent hover:bg-white/20 text-white border-white/30 hover:border-white font-semibold px-8 py-3 rounded-xl text-lg backdrop-blur-sm"
+      >
+        Explore Categories
+      </Button>
+    </div>
+  </div>
+</div>
     </div>
   );
 }
@@ -582,8 +573,8 @@ export default function Dashboard() {
 
   const maxDisplay = maxSelections === -1 ? "∞" : maxSelections;
 
-  // Determine if we should show the yellow hero
-  const shouldShowYellowHero = selectedCategory === "all" && !hasUserSelectedCategory;
+  // Determine if we should show the special occasions hero
+  const shouldShowSpecialOccasionsHero = selectedCategory === "all" && !hasUserSelectedCategory;
 
   return (
     <div className="min-h-screen bg-background">
@@ -651,9 +642,9 @@ export default function Dashboard() {
               
               {/* Products Grid */}
               <main className="flex-1">
-                {/* Show Yellow Hero when no category has been selected yet */}
-                {shouldShowYellowHero ? (
-                  <YellowHero 
+                {/* Show Special Occasions Hero when no category has been selected yet */}
+                {shouldShowSpecialOccasionsHero ? (
+                  <SpecialOccasionsHero 
                     companyName={companyName}
                     employeeName={employee?.firstName || "Employee"}
                     onSelectAllCategories={handleSelectAllCategories}
