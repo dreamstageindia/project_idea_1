@@ -1,6 +1,11 @@
 import type { Category } from "@/components/admin/categories/types";
 import type { Campaign } from "@/components/admin/campaigns/types";
 
+export type PriceSlab = {
+  minQty: number;   // minimum quantity for this price to apply
+  price: string;    // price (same format as Product.price)
+};
+
 export type Product = {
   id: string;
   name: string;
@@ -13,7 +18,7 @@ export type Product = {
   sku: string;
   isActive: boolean;
   backupProductId: string | null;
-  csrSupport: boolean; // Add this
+  csrSupport: boolean;
   createdAt: string;
   categoryIds: string[];
   categories?: Category[];
@@ -21,4 +26,7 @@ export type Product = {
   isBackup?: boolean;
   originalProductId?: string | null;
   campaigns?: Campaign[];
+
+  // ✅ NEW
+  priceSlabs?: PriceSlab[];
 };

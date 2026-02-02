@@ -1,10 +1,40 @@
 // src/lib/queryClient.ts
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+async function readErrorMessage(res: Response): Promise<string> {
+  // Try JSON first (many APIs return { message })
+  try {
+    const ct = res.headers.get("content-type") || "";
+    if (ct.includes("application/json")) {
+      const data = await res.json().catch(() => null);
+      if (data && typeof data === "object") {
+        const msg =
+          (data as any).message ||
+          (data as any).error ||
+          (data as any).details ||
+          JSON.stringify(data);
+        return String(msg);
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // Fallback to text
+  try {
+    const text = await res.text();
+    if (text) return text;
+  } catch {
+    // ignore
+  }
+
+  return res.statusText || "Request failed";
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    const msg = await readErrorMessage(res);
+    throw new Error(`${res.status}: ${msg}`);
   }
 }
 

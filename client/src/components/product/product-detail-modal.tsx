@@ -38,7 +38,66 @@ function _ProductDetailModal({
   });
 
   const inrPerPoint = parseFloat(branding?.inrPerPoint || "1");
-  const pointsRequired = Math.ceil(parseFloat(product.price) / inrPerPoint);
+
+  // ✅ Slab helpers (NEW)
+  const getUnitPriceForQty = (prod: any, qty: number): number => {
+    const base = Number(prod?.price);
+    const safeBase = Number.isFinite(base) ? base : 0;
+
+    const slabs = Array.isArray(prod?.priceSlabs) ? prod.priceSlabs : [];
+    if (!slabs.length) return safeBase;
+
+    const q = Math.max(1, Number(qty) || 1);
+
+    const matches = (slab: any) => {
+      const from =
+        slab?.from ??
+        slab?.min ??
+        slab?.minQty ??
+        slab?.start ??
+        slab?.minQuantity ??
+        1;
+
+      const to =
+        slab?.to ??
+        slab?.max ??
+        slab?.maxQty ??
+        slab?.end ??
+        slab?.maxQuantity ??
+        Number.POSITIVE_INFINITY;
+
+      const min = Number(from);
+      const max = Number(to);
+
+      const minOk = Number.isFinite(min) ? q >= min : true;
+      const maxOk = Number.isFinite(max) ? q <= max : true;
+
+      return minOk && maxOk;
+    };
+
+    const matchedSlab = slabs.find(matches);
+
+    if (!matchedSlab) return safeBase;
+
+    const slabPrice =
+      matchedSlab?.price ??
+      matchedSlab?.amount ??
+      matchedSlab?.inr ??
+      matchedSlab?.value ??
+      matchedSlab?.slabPrice;
+
+    const n = Number(slabPrice);
+    return Number.isFinite(n) ? n : safeBase;
+  };
+
+  // ✅ pointsRequired now depends on selected quantity slab (UPDATED)
+  const unitPriceInr = useMemo(() => {
+    return getUnitPriceForQty(product, quantity);
+  }, [product, quantity]);
+
+  const pointsRequired = useMemo(() => {
+    return Math.ceil(unitPriceInr / inrPerPoint);
+  }, [unitPriceInr, inrPerPoint]);
 
   // Helper function to normalize specifications data
   const normalizeSpecifications = useMemo(() => {
@@ -47,23 +106,20 @@ function _ProductDetailModal({
     console.log("Raw specifications:", product.specifications);
     console.log("Type of specifications:", typeof product.specifications);
 
-    // Case 1: Already a string
-    if (typeof product.specifications === 'string') {
+    if (typeof product.specifications === "string") {
       return product.specifications.trim();
     }
 
-    // Case 2: Array of characters (like your issue)
     if (Array.isArray(product.specifications)) {
       console.log("Specifications is an array, joining characters:", product.specifications);
-      return product.specifications.join('').trim();
+      return product.specifications.join("").trim();
     }
 
-    // Case 3: Object (legacy format) - convert to string
-    if (typeof product.specifications === 'object' && product.specifications !== null) {
+    if (typeof product.specifications === "object" && product.specifications !== null) {
       console.log("Specifications is an object, converting to string:", product.specifications);
       return Object.entries(product.specifications)
         .map(([key, value]) => `${key}: ${value}`)
-        .join('\n')
+        .join("\n")
         .trim();
     }
 
@@ -74,12 +130,11 @@ function _ProductDetailModal({
 
   useEffect(() => {
     if (!isOpen || !product) return;
-    
-    // Debug log to check what colors are available
+
     console.log("Product colors in modal:", product.colors);
     console.log("Product data in modal:", product);
     console.log("Normalized specifications:", normalizeSpecifications);
-    
+
     const first = product.colors?.[0] || "";
     if (first && selectedColor !== first) {
       console.log("Setting initial color to:", first);
@@ -140,9 +195,18 @@ function _ProductDetailModal({
     onAddToCart(product, selectedColor || null, quantity);
   };
 
-  // Check if product has colors and log for debugging
   const hasColors = Array.isArray(product.colors) && product.colors.length > 0;
   console.log("Has colors:", hasColors, "Colors array:", product.colors);
+
+  // price slab table helpers (your existing UI)
+  const priceSlabs = Array.isArray(product.priceSlabs) ? product.priceSlabs : [];
+  const hasPriceSlabs = priceSlabs.length > 0;
+
+  const pointsForAmount = (amountInr: any) => {
+    const n = Number(amountInr);
+    if (!Number.isFinite(n)) return null;
+    return Math.ceil(n / inrPerPoint);
+  };
 
   return (
     <Dialog
@@ -151,16 +215,23 @@ function _ProductDetailModal({
         if (!open) onClose();
       }}
     >
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto p-0" data-testid="modal-product-detail" style={{ zIndex: 1002 }}>
+      <DialogContent
+        className="max-w-6xl max-h-[90vh] overflow-y-auto p-0"
+        data-testid="modal-product-detail"
+        style={{ zIndex: 1002 }}
+      >
         <div className="grid md:grid-cols-2 gap-0 min-h-[600px]">
-          {/* Image Section - Fixed layout */}
+          {/* Image Section */}
           <div className="flex flex-col p-6 bg-white">
             <div className="flex-1 flex items-center justify-center min-h-[400px] bg-gray-50 rounded-lg mb-4">
               <ProductCarousel images={product.images || []} alt={product.name} />
             </div>
             <div className="flex space-x-2 overflow-x-auto pt-4">
               {(product.images || []).map((image: string, index: number) => (
-                <div key={index} className="flex-shrink-0 w-20 h-20 bg-gray-100 rounded-lg overflow-hidden border-2 border-transparent hover:border-blue-500 transition-colors">
+                <div
+                  key={index}
+                  className="flex-shrink-0 w-20 h-20 bg-gray-100 rounded-lg overflow-hidden border-2 border-transparent hover:border-blue-500 transition-colors"
+                >
                   <img
                     src={image}
                     alt={`${product.name} thumbnail ${index + 1}`}
@@ -171,7 +242,7 @@ function _ProductDetailModal({
               ))}
             </div>
           </div>
-          
+
           {/* Details Section */}
           <div className="p-8 bg-muted/30 flex flex-col">
             <div className="flex items-center justify-between mb-6">
@@ -189,12 +260,79 @@ function _ProductDetailModal({
                 <X className="h-6 w-6" />
               </Button>
             </div>
-            
-            <p className="text-3xl font-bold text-blue-600 mb-6" data-testid="text-product-detail-points-required">
+
+            {/* ✅ This now reflects selected quantity slab */}
+            <p
+              className="text-3xl font-bold text-blue-600 mb-6"
+              data-testid="text-product-detail-points-required"
+            >
               {pointsRequired} points
             </p>
-            
-            {/* Specifications Section - Handles multiple data formats */}
+
+            {/* Price Slabs Table */}
+            {hasPriceSlabs && (
+              <div className="mb-6">
+                <h4 className="font-semibold text-lg mb-3">Price Slabs:</h4>
+                <div className="bg-white rounded-lg shadow-sm overflow-hidden border">
+                  <div className="max-h-64 overflow-auto">
+                    <table className="w-full text-sm">
+                      <thead className="sticky top-0 bg-gray-50 border-b">
+                        <tr>
+                          <th className="text-left font-semibold px-4 py-3">Qty</th>
+                          <th className="text-left font-semibold px-4 py-3">Price (₹)</th>
+                          <th className="text-left font-semibold px-4 py-3">Points</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {priceSlabs.map((slab: any, idx: number) => {
+                          const from =
+                            slab.from ??
+                            slab.min ??
+                            slab.minQty ??
+                            slab.start ??
+                            slab.minQuantity ??
+                            "";
+
+                          const to =
+                            slab.to ??
+                            slab.max ??
+                            slab.maxQty ??
+                            slab.end ??
+                            slab.maxQuantity ??
+                            "";
+
+                          const price =
+                            slab.price ??
+                            slab.amount ??
+                            slab.inr ??
+                            slab.value ??
+                            slab.slabPrice ??
+                            "";
+
+                          const pts = pointsForAmount(price);
+
+                          return (
+                            <tr key={idx} className="border-b last:border-b-0">
+                              <td className="px-4 py-3 text-muted-foreground">
+                                {String(from)}{to !== "" ? ` - ${String(to)}` : ""}
+                              </td>
+                              <td className="px-4 py-3 text-muted-foreground">
+                                {price === "" ? "-" : String(price)}
+                              </td>
+                              <td className="px-4 py-3 text-muted-foreground">
+                                {pts == null ? "-" : `${pts}`}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Specifications */}
             {hasSpecifications && (
               <div className="mb-6">
                 <h4 className="font-semibold text-lg mb-3">Specifications:</h4>
@@ -202,13 +340,11 @@ function _ProductDetailModal({
                   <div className="whitespace-pre-wrap text-sm text-muted-foreground leading-relaxed">
                     {normalizeSpecifications}
                   </div>
-                  {/* Debug info - remove in production */}
-                  
                 </div>
               </div>
             )}
-            
-            {/* Packages Include Section */}
+
+            {/* Packages Include */}
             {Array.isArray(product.packagesInclude) && product.packagesInclude.length > 0 && (
               <div className="mb-6">
                 <h4 className="font-semibold text-lg mb-3">Packages Include:</h4>
@@ -222,7 +358,7 @@ function _ProductDetailModal({
                 </div>
               </div>
             )}
-            
+
             {/* Color Selection */}
             {hasColors ? (
               <div className="mb-6">
@@ -235,7 +371,9 @@ function _ProductDetailModal({
                         key={color}
                         type="button"
                         className={`w-12 h-12 rounded-full border-2 transition-all duration-200 ${
-                          selected ? "ring-2 ring-blue-500 ring-offset-2" : "border-gray-300 hover:border-blue-400"
+                          selected
+                            ? "ring-2 ring-blue-500 ring-offset-2"
+                            : "border-gray-300 hover:border-blue-400"
                         } ${getColorStyle(color)}`}
                         style={getColorInlineStyle(color)}
                         onClick={() => {
@@ -264,8 +402,8 @@ function _ProductDetailModal({
                 <p className="text-sm text-muted-foreground">No color options available</p>
               </div>
             )}
-            
-            {/* Quantity Selection */}
+
+            {/* Quantity */}
             <div className="mb-8">
               <h4 className="font-semibold text-lg mb-3">Quantity:</h4>
               <div className="flex items-center space-x-3">
@@ -295,13 +433,11 @@ function _ProductDetailModal({
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
-                <span className="text-sm text-muted-foreground ml-2">
-                  {product.stock} available
-                </span>
+                <span className="text-sm text-muted-foreground ml-2">{product.stock} available</span>
               </div>
             </div>
-            
-            {/* Add to Cart Button */}
+
+            {/* Add to Cart */}
             <div className="mt-auto">
               <Button
                 className="w-full py-4 text-lg font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"

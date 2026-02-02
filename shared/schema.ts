@@ -72,6 +72,12 @@ export const products = pgTable("products", {
   backupProductId: varchar("backup_product_id"),
   categoryIds: text("category_ids").array().notNull().default(sql`ARRAY[]::text[]`),
   csrSupport: boolean("csr_support").default(false),
+
+  // ✅ NEW: price slabs persisted in DB (jsonb column: price_slabs)
+  priceSlabs: json("price_slabs")
+    .$type<Array<{ minQty: number; price: string }>>()
+    .default([]),
+
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -202,7 +208,7 @@ export const insertCategorySchema = createInsertSchema(categories).pick({
 
 export const insertDomainWhitelistSchema = z.object({
   domain: z.string().min(1, "Domain is required").refine(
-    val => val.includes('.') && !val.includes('@'),
+    (val) => val.includes(".") && !val.includes("@"),
     { message: "Please enter a valid domain (e.g., company.com)" }
   ),
   isActive: z.boolean().default(true),
@@ -218,9 +224,19 @@ export const insertEmployeeSchema = createInsertSchema(employees).pick({
   points: true,
 });
 
+// ✅ NEW: slab schema
+const priceSlabSchema = z.object({
+  minQty: z.number().int().min(1, "Min Qty must be >= 1"),
+  price: z
+    .string()
+    .refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) >= 0, "Valid slab price is required"),
+});
+
 export const insertProductSchema = z.object({
   name: z.string().min(1, "Name is required"),
-  price: z.string().refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) >= 0, "Valid price is required"),
+  price: z
+    .string()
+    .refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) >= 0, "Valid price is required"),
   images: z.array(z.string()).default([]),
   colors: z.array(z.string()).default([]),
   stock: z.number().int().min(0).default(0),
@@ -231,24 +247,32 @@ export const insertProductSchema = z.object({
   backupProductId: z.string().nullable().default(null),
   categoryIds: z.array(z.string()).default([]),
   csrSupport: z.boolean().default(false),
+
+  // ✅ MUST be here, else Zod strips it and it never saves
+  priceSlabs: z.array(priceSlabSchema).default([]),
 });
 
-export const insertOrderSchema = createInsertSchema(orders).pick({
-  employeeId: true,
-  productId: true,
-  selectedColor: true,
-  quantity: true,
-  metadata: true,
-}).extend({
-  metadata: z.object({
-    usedPoints: z.number().optional(),
-    copayInr: z.number().optional().nullable(),
-    paymentId: z.string().optional().nullable(),
-    phonepeOrderId: z.string().optional().nullable(),
-    deliveryMethod: z.enum(['office', 'delivery']).optional().default('office'),
-    deliveryAddress: z.string().optional().nullable(),
-  }).optional().nullable(),
-});
+export const insertOrderSchema = createInsertSchema(orders)
+  .pick({
+    employeeId: true,
+    productId: true,
+    selectedColor: true,
+    quantity: true,
+    metadata: true,
+  })
+  .extend({
+    metadata: z
+      .object({
+        usedPoints: z.number().optional(),
+        copayInr: z.number().optional().nullable(),
+        paymentId: z.string().optional().nullable(),
+        phonepeOrderId: z.string().optional().nullable(),
+        deliveryMethod: z.enum(["office", "delivery"]).optional().default("office"),
+        deliveryAddress: z.string().optional().nullable(),
+      })
+      .optional()
+      .nullable(),
+  });
 
 export const insertCartItemSchema = createInsertSchema(cartItems).pick({
   employeeId: true,
@@ -262,17 +286,27 @@ export const insertCampaignSchema = z.object({
   description: z.string().optional().nullable().default(null),
   imageUrl: z.string().optional().nullable().default(null),
   isActive: z.boolean().default(true),
-  startDate: z.string().optional().nullable().default(null)
-    .transform((val) => val ? new Date(val) : null),
-  endDate: z.string().optional().nullable().default(null)
-    .transform((val) => val ? new Date(val) : null),
+  startDate: z
+    .string()
+    .optional()
+    .nullable()
+    .default(null)
+    .transform((val) => (val ? new Date(val) : null)),
+  endDate: z
+    .string()
+    .optional()
+    .nullable()
+    .default(null)
+    .transform((val) => (val ? new Date(val) : null)),
 });
 
-export const insertCampaignProductSchema = createInsertSchema(campaignProducts).pick({
-  productId: true,
-}).extend({
-  campaignId: z.string().optional(),
-});
+export const insertCampaignProductSchema = createInsertSchema(campaignProducts)
+  .pick({
+    productId: true,
+  })
+  .extend({
+    campaignId: z.string().optional(),
+  });
 
 export const insertBlogSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -322,7 +356,7 @@ export type Order = typeof orders.$inferSelect & {
     copayInr?: number;
     paymentId?: string;
     phonepeOrderId?: string;
-    deliveryMethod?: 'office' | 'delivery';
+    deliveryMethod?: "office" | "delivery";
     deliveryAddress?: string;
   } | null;
 };

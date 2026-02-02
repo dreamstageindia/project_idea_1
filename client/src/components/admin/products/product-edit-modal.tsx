@@ -7,11 +7,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Save, X, Trash, ArrowLeft, ArrowRight, UploadIcon, Tag, Heart, Badge } from "lucide-react";
+import { Save, X, Trash, ArrowLeft, ArrowRight, UploadIcon, Tag, Heart, Badge, Plus } from "lucide-react";
 import { uploadFiles, move, removeAt } from "@/lib/admin-utils";
 import type { Product } from "./types";
 import type { Category } from "@/components/admin/categories/types";
 import type { Campaign } from "@/components/admin/campaigns/types";
+
+type PriceSlabRow = { minQty: number | ""; price: string };
 
 interface ProductEditModalProps {
   open: boolean;
@@ -19,6 +21,35 @@ interface ProductEditModalProps {
   product: Product | null;
   products: Product[];
   categories: Category[];
+}
+
+function normalizeSlabsForSubmit(slabs: PriceSlabRow[]) {
+  // Remove empty rows, validate, sort, unique minQty
+  const cleaned = slabs
+    .map((s) => ({
+      minQty: typeof s.minQty === "string" ? Number(s.minQty) : s.minQty,
+      price: (s.price ?? "").toString().trim(),
+    }))
+    .filter((s) => Number.isFinite(s.minQty) && s.minQty > 0 && s.price !== "");
+
+  for (const s of cleaned) {
+    const p = Number(s.price);
+    if (!Number.isFinite(p) || p < 0) {
+      throw new Error("Slab price must be a number >= 0");
+    }
+  }
+
+  cleaned.sort((a, b) => a.minQty - b.minQty);
+
+  const seen = new Set<number>();
+  for (const s of cleaned) {
+    if (seen.has(s.minQty)) {
+      throw new Error("Duplicate Min Qty is not allowed in slab pricing");
+    }
+    seen.add(s.minQty);
+  }
+
+  return cleaned;
 }
 
 export function ProductEditModal({ open, onClose, product, products, categories }: ProductEditModalProps) {
@@ -30,11 +61,12 @@ export function ProductEditModal({ open, onClose, product, products, categories 
   const [packagesInput, setPackagesInput] = useState<string>("");
   const [specificationsInput, setSpecificationsInput] = useState<string>("");
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
-  
+  const [priceSlabs, setPriceSlabs] = useState<PriceSlabRow[]>([{ minQty: "", price: "" }]);
+
   // Get campaigns for this product
-  const { data: productCampaigns = [] } = useQuery<Campaign[]>({ 
+  const { data: productCampaigns = [] } = useQuery<Campaign[]>({
     queryKey: product ? [`/api/admin/products/${product.id}/campaigns`] : ["no-query"],
-    enabled: !!product
+    enabled: !!product,
   });
 
   useEffect(() => {
@@ -49,18 +81,30 @@ export function ProductEditModal({ open, onClose, product, products, categories 
         backupProductId: product.backupProductId,
         categoryIds: product.categoryIds || [],
       });
+
       setImages(product.images || []);
       setColorsInput((product.colors || []).join(", "));
       setPackagesInput((product.packagesInclude || []).join("\n"));
-      
-      // Directly use specifications as string
+
       setSpecificationsInput(
-        typeof product.specifications === 'string' 
-          ? product.specifications 
+        typeof product.specifications === "string"
+          ? product.specifications
           : JSON.stringify(product.specifications || "", null, 2)
       );
-      
+
       setSelectedCategoryIds(product.categoryIds || []);
+
+      // ✅ slab pricing init
+      const existingSlabs = (product as any)?.priceSlabs;
+      if (Array.isArray(existingSlabs) && existingSlabs.length > 0) {
+        const mapped: PriceSlabRow[] = existingSlabs.map((s: any) => ({
+          minQty: Number(s?.minQty ?? ""),
+          price: String(s?.price ?? ""),
+        }));
+        setPriceSlabs(mapped.length ? mapped : [{ minQty: "", price: "" }]);
+      } else {
+        setPriceSlabs([{ minQty: "", price: "" }]);
+      }
     }
   }, [product]);
 
@@ -76,31 +120,56 @@ export function ProductEditModal({ open, onClose, product, products, categories 
       onClose();
     },
     onError: (e: any) => {
-      toast({ 
-        title: "Update failed", 
-        description: e.message, 
-        variant: "destructive" 
+      toast({
+        title: "Update failed",
+        description: e.message,
+        variant: "destructive",
       });
     },
   });
 
   const toggleCategorySelection = (categoryId: string) => {
-    setSelectedCategoryIds(prev =>
-      prev.includes(categoryId)
-        ? prev.filter(id => id !== categoryId)
-        : [...prev, categoryId]
+    setSelectedCategoryIds((prev) =>
+      prev.includes(categoryId) ? prev.filter((id) => id !== categoryId) : [...prev, categoryId]
     );
+  };
+
+  const addSlabRow = () => {
+    setPriceSlabs((prev) => [...prev, { minQty: "", price: "" }]);
+  };
+
+  const removeSlabRow = (idx: number) => {
+    setPriceSlabs((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+      return next.length ? next : [{ minQty: "", price: "" }];
+    });
+  };
+
+  const updateSlab = (idx: number, patch: Partial<PriceSlabRow>) => {
+    setPriceSlabs((prev) => prev.map((row, i) => (i === idx ? { ...row, ...patch } : row)));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.name?.trim()) {
       toast({ title: "Name is required", variant: "destructive" });
       return;
     }
     if (!formData.sku?.trim()) {
       toast({ title: "SKU is required", variant: "destructive" });
+      return;
+    }
+
+    let normalizedSlabs: Array<{ minQty: number; price: string }> = [];
+    try {
+      normalizedSlabs = normalizeSlabsForSubmit(priceSlabs);
+    } catch (err: any) {
+      toast({
+        title: "Invalid slab pricing",
+        description: err.message || "Please fix slab values",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -114,9 +183,12 @@ export function ProductEditModal({ open, onClose, product, products, categories 
       isActive: formData.isActive !== false,
       csrSupport: formData.csrSupport || false,
       images: images,
-      colors: colorsInput.split(",").map(s => s.trim()).filter(Boolean),
+      colors: colorsInput.split(",").map((s) => s.trim()).filter(Boolean),
       packagesInclude: packagesInput.split("\n").filter(Boolean),
       specifications: specificationsInput.trim(),
+
+      // ✅ NEW: slab pricing
+      priceSlabs: normalizedSlabs,
     };
 
     updateProductMutation.mutate(productData);
@@ -130,7 +202,7 @@ export function ProductEditModal({ open, onClose, product, products, categories 
         <DialogHeader>
           <DialogTitle>Edit Product: {product.name}</DialogTitle>
         </DialogHeader>
-        
+
         {/* Campaigns Info */}
         {productCampaigns.length > 0 && (
           <div className="mb-4 p-3 bg-muted rounded-lg">
@@ -166,7 +238,7 @@ export function ProductEditModal({ open, onClose, product, products, categories 
 
             {/* Price */}
             <div>
-              <Label htmlFor="edit-price">Price *</Label>
+              <Label htmlFor="edit-price">Base Price *</Label>
               <Input
                 id="edit-price"
                 type="number"
@@ -176,6 +248,71 @@ export function ProductEditModal({ open, onClose, product, products, categories 
                 onChange={(e) => setFormData({ ...formData, price: e.target.value })}
                 required
               />
+              <p className="text-xs text-muted-foreground mt-1">
+                Base price is used when no slab matches the quantity.
+              </p>
+            </div>
+
+            {/* ✅ Slab Pricing */}
+            <div className="md:col-span-2">
+              <div className="flex items-center justify-between">
+                <Label>Slab Pricing (optional)</Label>
+                <Button type="button" variant="outline" size="sm" onClick={addSlabRow}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Row
+                </Button>
+              </div>
+
+              <div className="mt-2 space-y-2">
+                {priceSlabs.map((row, idx) => (
+                  <div
+                    key={`slab-${idx}`}
+                    className="grid grid-cols-12 gap-2 items-end rounded-md border border-input bg-background p-3"
+                  >
+                    <div className="col-span-5">
+                      <Label className="text-xs">Min Qty</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={row.minQty}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          updateSlab(idx, { minQty: v === "" ? "" : Number(v) });
+                        }}
+                        placeholder="e.g., 5"
+                      />
+                    </div>
+
+                    <div className="col-span-5">
+                      <Label className="text-xs">Price for Qty ≥ Min Qty</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        value={row.price}
+                        onChange={(e) => updateSlab(idx, { price: e.target.value })}
+                        placeholder="e.g., 799.00"
+                      />
+                    </div>
+
+                    <div className="col-span-2 flex justify-end">
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="icon"
+                        onClick={() => removeSlabRow(idx)}
+                        title="Remove row"
+                      >
+                        <Trash className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <p className="text-xs text-muted-foreground mt-2">
+                Example: Min Qty = 10, Price = 500 means if user buys 10 or more, unit price becomes 500.
+              </p>
             </div>
 
             {/* Categories */}
@@ -221,7 +358,7 @@ export function ProductEditModal({ open, onClose, product, products, categories 
                 required
               />
             </div>
-            
+
             {/* Images */}
             <div className="md:col-span-2">
               <Label>Images</Label>
@@ -308,9 +445,7 @@ export function ProductEditModal({ open, onClose, product, products, categories 
                 type="number"
                 min="0"
                 value={String(formData.stock ?? 0)}
-                onChange={(e) =>
-                  setFormData({ ...formData, stock: Number(e.target.value) || 0 })
-                }
+                onChange={(e) => setFormData({ ...formData, stock: Number(e.target.value) || 0 })}
               />
             </div>
 
@@ -357,7 +492,7 @@ export function ProductEditModal({ open, onClose, product, products, categories 
               >
                 <option value="">— None —</option>
                 {products
-                  .filter(p => p.id !== product.id)
+                  .filter((p) => p.id !== product.id)
                   .map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name} ({p.sku})
@@ -377,7 +512,9 @@ export function ProductEditModal({ open, onClose, product, products, categories 
                   checked={Boolean(formData.isActive)}
                   onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
                 />
-                <Label htmlFor="edit-isActive" className="text-sm">Product is active</Label>
+                <Label htmlFor="edit-isActive" className="text-sm">
+                  Product is active
+                </Label>
               </div>
             </div>
 
@@ -401,18 +538,11 @@ export function ProductEditModal({ open, onClose, product, products, categories 
           </div>
 
           <div className="flex gap-2 justify-end">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={onClose}
-            >
+            <Button type="button" variant="secondary" onClick={onClose}>
               <X className="h-4 w-4 mr-2" />
               Cancel
             </Button>
-            <Button
-              type="submit"
-              disabled={updateProductMutation.isPending}
-            >
+            <Button type="submit" disabled={updateProductMutation.isPending}>
               <Save className="h-4 w-4 mr-2" />
               {updateProductMutation.isPending ? "Saving..." : "Save Changes"}
             </Button>

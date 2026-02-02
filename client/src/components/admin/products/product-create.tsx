@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { Plus, UploadIcon, ArrowLeft, ArrowRight, Trash, Heart } from "lucide-react";
 import { uploadFiles, move, removeAt } from "@/lib/admin-utils";
-import type { Product } from "./types";
+import type { Product, PriceSlab } from "./types";
 import type { Category } from "@/components/admin/categories/types";
 
 const defaultNewProduct: Partial<Product> = {
@@ -25,7 +25,22 @@ const defaultNewProduct: Partial<Product> = {
   csrSupport: false,
   backupProductId: null,
   categoryIds: [],
+  priceSlabs: [], // ✅ NEW
 };
+
+function normalizeSlabs(slabs: PriceSlab[]): PriceSlab[] {
+  // Remove empty rows, normalize numbers, sort and validate duplicates later
+  const cleaned = slabs
+    .map((s) => ({
+      minQty: Number(s.minQty || 0),
+      price: String(s.price ?? "0"),
+    }))
+    .filter((s) => Number.isFinite(s.minQty) && s.minQty > 0 && s.price !== "");
+
+  // sort ascending by minQty
+  cleaned.sort((a, b) => a.minQty - b.minQty);
+  return cleaned;
+}
 
 export function ProductCreate() {
   const { toast } = useToast();
@@ -35,13 +50,16 @@ export function ProductCreate() {
   const [colorsInput, setColorsInput] = useState<string>("");
   const [packagesInput, setPackagesInput] = useState<string>("");
   const [specificationsInput, setSpecificationsInput] = useState<string>("");
-  
-  const { data: products = [] } = useQuery<Product[]>({ 
-    queryKey: ["/api/products-admin"] 
+
+  // ✅ NEW: slabs state (kept separate for easy UI)
+  const [priceSlabs, setPriceSlabs] = useState<PriceSlab[]>([]);
+
+  const { data: products = [] } = useQuery<Product[]>({
+    queryKey: ["/api/products-admin"],
   });
 
-  const { data: categories = [] } = useQuery<Category[]>({ 
-    queryKey: ["/api/categories"] 
+  const { data: categories = [] } = useQuery<Category[]>({
+    queryKey: ["/api/categories"],
   });
 
   const createProductMutation = useMutation({
@@ -58,12 +76,14 @@ export function ProductCreate() {
       setColorsInput("");
       setPackagesInput("");
       setSpecificationsInput("");
+      setPriceSlabs([]); // ✅ reset slabs
     },
-    onError: (e: any) => toast({ 
-      title: "Create failed", 
-      description: e.message, 
-      variant: "destructive" 
-    }),
+    onError: (e: any) =>
+      toast({
+        title: "Create failed",
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   const toggleCategorySelection = (categoryId: string) => {
@@ -79,6 +99,46 @@ export function ProductCreate() {
 
   const selectedCategoryIds = newProduct.categoryIds ?? [];
 
+  // ✅ derived validation for slabs
+  const slabValidation = useMemo(() => {
+    const normalized = normalizeSlabs(priceSlabs);
+
+    // duplicates check
+    const seen = new Set<number>();
+    const dup = normalized.find((s) => {
+      if (seen.has(s.minQty)) return true;
+      seen.add(s.minQty);
+      return false;
+    });
+
+    // price must be a valid number >= 0
+    const badPrice = normalized.find((s) => {
+      const p = Number(s.price);
+      return !Number.isFinite(p) || p < 0;
+    });
+
+    return {
+      normalized,
+      hasDuplicateMinQty: Boolean(dup),
+      badPrice: Boolean(badPrice),
+    };
+  }, [priceSlabs]);
+
+  const addSlabRow = () => {
+    setPriceSlabs((prev) => [
+      ...prev,
+      { minQty: prev.length ? prev[prev.length - 1].minQty + 1 : 1, price: newProduct.price ?? "0.00" },
+    ]);
+  };
+
+  const removeSlabRow = (idx: number) => {
+    setPriceSlabs((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const updateSlabRow = (idx: number, patch: Partial<PriceSlab>) => {
+    setPriceSlabs((prev) => prev.map((row, i) => (i === idx ? { ...row, ...patch } : row)));
+  };
+
   const handleCreate = () => {
     // Validate required fields
     if (!newProduct.name?.trim()) {
@@ -90,8 +150,26 @@ export function ProductCreate() {
       return;
     }
 
+    // Validate slab pricing rows (if any)
+    if (slabValidation.hasDuplicateMinQty) {
+      toast({
+        title: "Invalid slab pricing",
+        description: "Duplicate minimum quantity found. Each slab must have a unique Min Qty.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (slabValidation.badPrice) {
+      toast({
+        title: "Invalid slab pricing",
+        description: "One or more slab prices are invalid. Prices must be a number ≥ 0.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     // Build the complete product data
-    const productData = {
+    const productData: Partial<Product> = {
       name: newProduct.name.trim(),
       price: newProduct.price || "0.00",
       sku: newProduct.sku.trim(),
@@ -101,13 +179,18 @@ export function ProductCreate() {
       isActive: newProduct.isActive !== false,
       csrSupport: newProduct.csrSupport || false,
       images: newProductImages,
-      colors: colorsInput.split(",").map(s => s.trim()).filter(Boolean),
-      packagesInclude: packagesInput.split("\n").filter(Boolean),
+      colors: colorsInput.split(",").map((s) => s.trim()).filter(Boolean),
+      packagesInclude: packagesInput.split("\n").map((s) => s.trim()).filter(Boolean),
       specifications: specificationsInput.trim(),
+
+      // ✅ NEW
+      // Example semantics:
+      // If slabs exist: price for qty >= minQty is slab.price (pick highest minQty <= qty)
+      priceSlabs: slabValidation.normalized,
     };
 
     console.log("Final product data to submit:", productData);
-    
+
     createProductMutation.mutate(productData);
   };
 
@@ -116,6 +199,7 @@ export function ProductCreate() {
       <CardHeader>
         <CardTitle>Create Product</CardTitle>
       </CardHeader>
+
       <CardContent className="space-y-4">
         <div className="grid md:grid-cols-2 gap-4">
           {/* Name */}
@@ -131,7 +215,7 @@ export function ProductCreate() {
 
           {/* Price */}
           <div>
-            <Label htmlFor="product-price">Price *</Label>
+            <Label htmlFor="product-price">Base Price *</Label>
             <Input
               id="product-price"
               type="number"
@@ -141,6 +225,9 @@ export function ProductCreate() {
               onChange={(e) => setNewProduct((p) => ({ ...p, price: e.target.value }))}
               placeholder="0.00"
             />
+            <p className="text-xs text-muted-foreground mt-1">
+              Used when slab pricing is not applicable (or as the default tier).
+            </p>
           </div>
 
           {/* Categories */}
@@ -186,7 +273,7 @@ export function ProductCreate() {
               placeholder="Enter SKU"
             />
           </div>
-          
+
           {/* Images */}
           <div className="md:col-span-2">
             <Label>Images</Label>
@@ -209,6 +296,7 @@ export function ProductCreate() {
               />
               <UploadIcon className="h-5 w-5 opacity-60" />
             </div>
+
             {!!newProductImages.length && (
               <div className="mt-3 flex flex-wrap gap-3">
                 {newProductImages.map((u, idx) => (
@@ -216,6 +304,7 @@ export function ProductCreate() {
                     <div className="w-20 h-20 rounded border overflow-hidden bg-muted flex items-center justify-center">
                       <img src={u} alt="preview" className="object-cover w-full h-full" />
                     </div>
+
                     <div className="flex justify-center gap-1 mt-1">
                       <Button
                         type="button"
@@ -247,6 +336,7 @@ export function ProductCreate() {
                         <Trash className="h-4 w-4" />
                       </Button>
                     </div>
+
                     <div className="text-center text-[10px] text-muted-foreground mt-1">#{idx}</div>
                   </div>
                 ))}
@@ -273,11 +363,83 @@ export function ProductCreate() {
               type="number"
               min="0"
               value={String(newProduct.stock ?? 0)}
-              onChange={(e) =>
-                setNewProduct((p) => ({ ...p, stock: Number(e.target.value) || 0 }))
-              }
+              onChange={(e) => setNewProduct((p) => ({ ...p, stock: Number(e.target.value) || 0 }))}
               placeholder="0"
             />
+          </div>
+
+          {/* ✅ Slab Pricing */}
+          <div className="md:col-span-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Slab Pricing (optional)</Label>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Define price tiers by minimum quantity. Example: Min Qty 5 → price applies when user buys 5 or more.
+                </p>
+              </div>
+              <Button type="button" variant="outline" onClick={addSlabRow}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Slab
+              </Button>
+            </div>
+
+            {priceSlabs.length === 0 ? (
+              <p className="text-sm text-muted-foreground mt-2">No slabs added. Base price will be used.</p>
+            ) : (
+              <div className="mt-3 space-y-2">
+                <div className="grid grid-cols-12 gap-2 text-xs text-muted-foreground px-1">
+                  <div className="col-span-4">Min Qty *</div>
+                  <div className="col-span-6">Price *</div>
+                  <div className="col-span-2 text-right">Action</div>
+                </div>
+
+                {priceSlabs.map((slab, idx) => (
+                  <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+                    <div className="col-span-4">
+                      <Input
+                        type="number"
+                        min={1}
+                        value={String(slab.minQty ?? "")}
+                        onChange={(e) => updateSlabRow(idx, { minQty: Number(e.target.value) || 0 })}
+                        placeholder="e.g., 5"
+                      />
+                    </div>
+                    <div className="col-span-6">
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        value={String(slab.price ?? "")}
+                        onChange={(e) => updateSlabRow(idx, { price: e.target.value })}
+                        placeholder="e.g., 199.00"
+                      />
+                    </div>
+                    <div className="col-span-2 flex justify-end">
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="icon"
+                        onClick={() => removeSlabRow(idx)}
+                        title="Remove slab"
+                      >
+                        <Trash className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+
+                {(slabValidation.hasDuplicateMinQty || slabValidation.badPrice) && (
+                  <div className="text-sm text-red-500">
+                    {slabValidation.hasDuplicateMinQty && <div>• Duplicate Min Qty found. Each slab must be unique.</div>}
+                    {slabValidation.badPrice && <div>• Invalid price in one or more slabs (must be number ≥ 0).</div>}
+                  </div>
+                )}
+
+                <p className="text-xs text-muted-foreground">
+                  Tip: system should apply the slab with the highest Min Qty that is ≤ selected quantity.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Packages Include */}
@@ -341,7 +503,9 @@ export function ProductCreate() {
                 checked={Boolean(newProduct.isActive)}
                 onChange={(e) => setNewProduct((p) => ({ ...p, isActive: e.target.checked }))}
               />
-              <Label htmlFor="isActive" className="text-sm">Product is active</Label>
+              <Label htmlFor="isActive" className="text-sm">
+                Product is active
+              </Label>
             </div>
           </div>
 
@@ -368,10 +532,7 @@ export function ProductCreate() {
         </div>
 
         <div className="flex gap-2">
-          <Button
-            onClick={handleCreate}
-            disabled={createProductMutation.isPending}
-          >
+          <Button onClick={handleCreate} disabled={createProductMutation.isPending}>
             <Plus className="h-4 w-4 mr-2" />
             {createProductMutation.isPending ? "Creating..." : "Create Product"}
           </Button>

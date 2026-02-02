@@ -49,6 +49,33 @@ function toPublicUrl(absPath: string) {
   return `/uploads/${rel}`;
 }
 
+function normalizePriceSlabs(input: any): Array<{ minQty: number; price: string }> {
+  if (!Array.isArray(input)) return [];
+
+  const cleaned = input
+    .map((s) => ({
+      minQty: Number(s?.minQty),
+      price: String(s?.price ?? "").trim(),
+    }))
+    .filter((s) => Number.isFinite(s.minQty) && s.minQty > 0 && s.price !== "");
+
+  for (const s of cleaned) {
+    const p = Number(s.price);
+    if (!Number.isFinite(p) || p < 0) throw new Error("Slab price must be a number >= 0");
+  }
+
+  cleaned.sort((a, b) => a.minQty - b.minQty);
+
+  const seen = new Set<number>();
+  for (const s of cleaned) {
+    if (seen.has(s.minQty)) throw new Error("Duplicate Min Qty is not allowed in slab pricing");
+    seen.add(s.minQty);
+  }
+
+  return cleaned;
+}
+
+
 function isValidEmail(email: string): boolean {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
@@ -566,229 +593,303 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // PhonePe Payment Routes with delivery support
-  app.post("/api/orders/create-copay-order", async (req, res) => {
-    try {
-      const token = req.headers.authorization?.replace("Bearer ", "");
-      if (!token) return res.status(401).json({ message: "No token" });
-      const session = await storage.getSession(token);
-      if (!session) return res.status(401).json({ message: "Invalid session" });
-      const employee = await storage.getEmployee(session.employeeId);
-      if (!employee) return res.status(404).json({ message: "Employee not found" });
+// ===============================
+// PhonePe Payment Routes (UPDATED)
+// Uses .env:
+// PHONEPE_MERCHANT_ID
+// PHONEPE_SALT_KEY
+// PHONEPE_SALT_INDEX
+// PHONEPE_REDIRECT_URL_BASE  (frontend base URL)
+// Optional (if you want): PHONEPE_API_URL
+// ===============================
 
-      const { deliveryMethod = "office", deliveryAddress = null } = req.body;
+app.post("/api/orders/create-copay-order", async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    if (!token) return res.status(401).json({ message: "No token" });
 
-      const cartItems = await storage.getCartItems(session.employeeId);
-      if (cartItems.length === 0) return res.status(400).json({ message: "Cart is empty" });
+    const session = await storage.getSession(token);
+    if (!session) return res.status(401).json({ message: "Invalid session" });
 
-      const branding = await storage.getBranding();
-      const maxSelections = branding?.maxSelectionsPerUser ?? 1;
-      const employeeOrders = await storage.getOrdersByEmployeeId(session.employeeId);
+    const employee = await storage.getEmployee(session.employeeId);
+    if (!employee) return res.status(404).json({ message: "Employee not found" });
 
-      if (maxSelections !== -1 && employeeOrders.length + cartItems.length > maxSelections) {
-        return res.status(400).json({ message: "Selection limit reached" });
+    const { deliveryMethod = "office", deliveryAddress = null } = req.body;
+
+    const cartItems = await storage.getCartItems(session.employeeId);
+    if (cartItems.length === 0) return res.status(400).json({ message: "Cart is empty" });
+
+    const branding = await storage.getBranding();
+    const maxSelections = branding?.maxSelectionsPerUser ?? 1;
+    const employeeOrders = await storage.getOrdersByEmployeeId(session.employeeId);
+
+    if (maxSelections !== -1 && employeeOrders.length + cartItems.length > maxSelections) {
+      return res.status(400).json({ message: "Selection limit reached" });
+    }
+
+    const inrPerPoint = parseFloat(branding?.inrPerPoint ?? "1");
+    let totalPointsRequired = 0;
+
+    for (const item of cartItems) {
+      const product = await storage.getProduct(item.productId);
+      if (!product || (product.stock || 0) < item.quantity) {
+        return res.status(400).json({ message: `Product ${product?.name || item.productId} unavailable` });
       }
+      totalPointsRequired += Math.ceil(parseFloat(product.price) / inrPerPoint) * item.quantity;
+    }
 
-      const inrPerPoint = parseFloat(branding?.inrPerPoint ?? "1");
-      let totalPointsRequired = 0;
+    const userPoints = employee.points ?? 0;
+    if (userPoints >= totalPointsRequired) {
+      return res.status(400).json({ message: "Sufficient points, use normal checkout" });
+    }
 
-      for (const item of cartItems) {
-        const product = await storage.getProduct(item.productId);
-        if (!product || (product.stock || 0) < item.quantity) {
-          return res.status(400).json({ message: `Product ${product?.name || item.productId} unavailable` });
-        }
-        totalPointsRequired += Math.ceil(parseFloat(product.price) / inrPerPoint) * item.quantity;
+    const deficitPoints = totalPointsRequired - userPoints;
+    const copayInr = Math.ceil(deficitPoints * inrPerPoint);
+
+    // ✅ Env config (YOU SAID YOU HAVE THESE)
+    const merchantId = process.env.PHONEPE_MERCHANT_ID;
+    const saltKey = process.env.PHONEPE_SALT_KEY;
+    const saltIndex = process.env.PHONEPE_SALT_INDEX || "1";
+    const redirectBase = process.env.PHONEPE_REDIRECT_URL_BASE; // frontend base URL
+    const apiUrl = process.env.PHONEPE_API_URL || "https://api-preprod.phonepe.com/apis/pg-sandbox";
+
+    if (!merchantId || !saltKey || !redirectBase) {
+      return res.status(500).json({
+        message:
+          "PhonePe not configured. Missing PHONEPE_MERCHANT_ID / PHONEPE_SALT_KEY / PHONEPE_REDIRECT_URL_BASE",
+      });
+    }
+
+    const merchantTransactionId = `TXN_${Date.now()}`;
+
+    // ✅ redirectUrl should be FRONTEND cart route
+    const redirectUrl = `${redirectBase.replace(/\/$/, "")}/cart`;
+
+    // ✅ callbackUrl must be BACKEND endpoint reachable by PhonePe
+    // We can derive backend base from request (works behind most proxies if configured)
+    const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol;
+    const host = (req.headers["x-forwarded-host"] as string) || req.get("host");
+    const backendBase = `${proto}://${host}`;
+
+    let callbackUrl =
+      `${backendBase}/api/orders/phonepe-callback` +
+      `?merchantTransactionId=${encodeURIComponent(merchantTransactionId)}` +
+      `&deliveryMethod=${encodeURIComponent(deliveryMethod)}`;
+
+    if (deliveryAddress) {
+      callbackUrl += `&deliveryAddress=${encodeURIComponent(deliveryAddress)}`;
+    }
+
+    const payload = {
+      merchantId,
+      merchantTransactionId,
+      merchantUserId: employee.id,
+      amount: copayInr * 100, // paise
+      redirectUrl,
+      redirectMode: "REDIRECT",
+      callbackUrl,
+      mobileNumber: employee.phoneNumber?.replace(/^\+91/, ""),
+      paymentInstrument: {
+        type: "PAY_PAGE",
+      },
+    };
+
+    const base64Payload = Buffer.from(JSON.stringify(payload)).toString("base64");
+    const endpoint = "/pg/v1/pay";
+
+    const stringToHash = base64Payload + endpoint + saltKey;
+    const sha256 = crypto.createHash("sha256").update(stringToHash).digest("hex");
+    const xVerify = sha256 + "###" + saltIndex;
+
+    const response = await fetch(`${apiUrl}${endpoint}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-VERIFY": xVerify,
+      },
+      body: JSON.stringify({ request: base64Payload }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result?.success) {
+      return res.status(500).json({
+        message: "Failed to initiate PhonePe payment",
+        details: result,
+      });
+    }
+
+    const paymentUrl =
+      result?.data?.instrumentResponse?.redirectInfo?.url ||
+      result?.data?.instrumentResponse?.redirectInfo?.redirectUrl;
+
+    if (!paymentUrl) {
+      return res.status(500).json({ message: "PhonePe redirect URL missing", details: result });
+    }
+
+    // ✅ IMPORTANT: frontend expects these fields (we fixed it earlier)
+    res.json({
+      paymentUrl,
+      merchantTransactionId,
+    });
+  } catch (error: any) {
+    console.error("create-copay-order error:", error);
+    res.status(500).json({ message: "Failed to create copay order", details: error.message });
+  }
+});
+
+app.post("/api/orders/phonepe-callback", async (req, res) => {
+  try {
+    const { code } = req.body;
+    const { merchantTransactionId, deliveryMethod, deliveryAddress } = req.query;
+
+    const redirectBase = process.env.PHONEPE_REDIRECT_URL_BASE || "http://localhost:5173";
+    const frontendCart = `${redirectBase.replace(/\/$/, "")}/cart`;
+
+    // PhonePe can hit callback for success/failure depending on integration
+    if (code !== "PAYMENT_SUCCESS") {
+      return res.redirect(`${frontendCart}?payment=failure`);
+    }
+
+    if (merchantTransactionId && deliveryMethod) {
+      const qs =
+        `merchantTransactionId=${encodeURIComponent(merchantTransactionId as string)}` +
+        `&deliveryMethod=${encodeURIComponent(deliveryMethod as string)}` +
+        (deliveryAddress ? `&deliveryAddress=${encodeURIComponent(deliveryAddress as string)}` : "");
+
+      return res.redirect(`${frontendCart}?${qs}`);
+    }
+
+    return res.redirect(`${frontendCart}?payment=success`);
+  } catch (error: any) {
+    console.error("PhonePe callback error:", error);
+    const redirectBase = process.env.PHONEPE_REDIRECT_URL_BASE || "http://localhost:5173";
+    return res.redirect(`${redirectBase.replace(/\/$/, "")}/cart?payment=failure`);
+  }
+});
+
+app.post("/api/orders/verify-copay", async (req, res) => {
+  try {
+    // ✅ Accept both names (safety)
+    const {
+      merchantTransactionId,
+      merchantOrderId,
+      deliveryMethod = "office",
+      deliveryAddress = null,
+    } = req.body;
+
+    const txnId = merchantTransactionId || merchantOrderId;
+    if (!txnId) return res.status(400).json({ message: "Missing merchantTransactionId" });
+
+    const merchantId = process.env.PHONEPE_MERCHANT_ID;
+    const saltKey = process.env.PHONEPE_SALT_KEY;
+    const saltIndex = process.env.PHONEPE_SALT_INDEX || "1";
+    const apiUrl = process.env.PHONEPE_API_URL || "https://api-preprod.phonepe.com/apis/pg-sandbox";
+
+    if (!merchantId || !saltKey) {
+      return res.status(500).json({ message: "PhonePe not configured" });
+    }
+
+    const endpoint = `/pg/v1/status/${merchantId}/${txnId}`;
+    const stringToHash = endpoint + saltKey;
+    const sha256 = crypto.createHash("sha256").update(stringToHash).digest("hex");
+    const xVerify = sha256 + "###" + saltIndex;
+
+    const response = await fetch(`${apiUrl}${endpoint}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "X-VERIFY": xVerify,
+        "X-MERCHANT-ID": merchantId,
+      },
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result?.success || result?.code !== "PAYMENT_SUCCESS") {
+      return res.status(400).json({ message: "Payment not completed", details: result });
+    }
+
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    if (!token) return res.status(401).json({ message: "No token" });
+
+    const session = await storage.getSession(token);
+    if (!session) return res.status(401).json({ message: "Invalid session" });
+
+    const employee = await storage.getEmployee(session.employeeId);
+    if (!employee) return res.status(404).json({ message: "Employee not found" });
+
+    const branding = await storage.getBranding();
+    const maxSelections = branding?.maxSelectionsPerUser ?? 1;
+
+    const employeeOrders = await storage.getOrdersByEmployeeId(session.employeeId);
+    const cartItems = await storage.getCartItems(session.employeeId);
+
+    if (cartItems.length === 0) return res.status(400).json({ message: "Cart is empty" });
+    if (maxSelections !== -1 && employeeOrders.length + cartItems.length > maxSelections) {
+      return res.status(400).json({ message: "Selection limit reached" });
+    }
+
+    const inrPerPoint = parseFloat(branding?.inrPerPoint ?? "1");
+    let totalPointsRequired = 0;
+
+    for (const item of cartItems) {
+      const product = await storage.getProduct(item.productId);
+      if (!product || (product.stock || 0) < item.quantity) {
+        return res.status(400).json({ message: `Product ${product?.name || item.productId} unavailable` });
       }
+      totalPointsRequired += Math.ceil(parseFloat(product.price) / inrPerPoint) * item.quantity;
+    }
 
-      const userPoints = employee.points ?? 0;
-      if (userPoints >= totalPointsRequired) {
-        return res.status(400).json({ message: "Sufficient points, use normal checkout" });
-      }
+    const userPoints = employee.points ?? 0;
+    if (userPoints >= totalPointsRequired) {
+      return res.status(400).json({ message: "Sufficient points" });
+    }
 
-      const deficitPoints = totalPointsRequired - userPoints;
-      const copayInr = Math.ceil(deficitPoints * inrPerPoint);
+    const deficitPoints = totalPointsRequired - userPoints;
+    const copayInr = Math.ceil(deficitPoints * inrPerPoint);
 
-      const merchantId = "PGTESTPAYUAT";
-      const saltKey = "099eb0cd-02cf-4e2a-8aca-3e6c6aff0399";
-      const saltIndex = process.env.PHONEPE_SALT_INDEX || "1";
-      const apiUrl = process.env.PHONEPE_API_URL || "https://api-preprod.phonepe.com/apis/pg-sandbox";
+    const paidAmount = (result?.data?.amount ?? 0) / 100;
+    if (paidAmount !== copayInr) {
+      return res.status(400).json({ message: "Amount mismatch", expected: copayInr, paid: paidAmount });
+    }
 
-      if (!merchantId || !saltKey) {
-        return res.status(500).json({ message: "PhonePe not configured" });
-      }
+    const orders = [];
+    for (const item of cartItems) {
+      const product = await storage.getProduct(item.productId);
 
-      const merchantTransactionId = `TXN_${Date.now()}`;
-      
-      // Store delivery info in session or pass in callback URL
-      const callbackUrl = `http://localhost:5000/api/orders/phonepe-callback?merchantOrderId=${merchantTransactionId}&deliveryMethod=${deliveryMethod}`;
-      if (deliveryAddress) {
-        callbackUrl += `&deliveryAddress=${encodeURIComponent(deliveryAddress)}`;
-      }
+      await storage.updateProduct(item.productId, { stock: (product!.stock || 0) - item.quantity });
 
-      const payload = {
-        merchantId,
-        merchantTransactionId,
-        merchantUserId: employee.id,
-        amount: copayInr * 100,
-        redirectUrl: "http://localhost:5000/cart",
-        redirectMode: "REDIRECT",
-        callbackUrl,
-        mobileNumber: employee.phoneNumber?.replace(/^\+91/, ""),
-        paymentInstrument: {
-          type: "PAY_PAGE",
+      const order = await storage.createOrder({
+        employeeId: employee.id,
+        productId: item.productId,
+        selectedColor: item.selectedColor,
+        quantity: item.quantity,
+        metadata: {
+          usedPoints: Math.ceil(parseFloat(product!.price) / inrPerPoint) * item.quantity,
+          copayInr,
+          paymentId: result?.data?.transactionId,
+          phonepeOrderId: txnId,
+          deliveryMethod,
+          deliveryAddress,
         },
-      };
-
-      const base64Payload = Buffer.from(JSON.stringify(payload)).toString("base64");
-      const endpoint = "/pg/v1/pay";
-      const stringToHash = base64Payload + endpoint + saltKey;
-      const sha256 = crypto.createHash("sha256").update(stringToHash).digest("hex");
-      const xVerify = sha256 + "###" + saltIndex;
-
-      const response = await fetch(`${apiUrl}${endpoint}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-VERIFY": xVerify,
-        },
-        body: JSON.stringify({ request: base64Payload }),
       });
 
-      const result = await response.json();
-      if (!response.ok || !result.success) {
-        return res.status(500).json({ message: "Failed to initiate PhonePe payment", details: result });
-      }
-
-      res.json({
-        paymentUrl: result.data.instrumentResponse.redirectInfo.url,
-        merchantTransactionId,
-      });
-    } catch (error: any) {
-      console.error("create-copay-order error:", error);
-      res.status(500).json({ message: "Failed to create copay order", details: error.message });
+      orders.push({ order, product });
     }
-  });
 
-  app.post("/api/orders/phonepe-callback", async (req, res) => {
-    try {
-      const { code } = req.body;
-      const { merchantOrderId, deliveryMethod, deliveryAddress } = req.query;
-      
-      if (code !== "PAYMENT_SUCCESS") {
-        return res.status(200).json({ success: false });
-      }
-      
-      if (merchantOrderId && deliveryMethod) {
-        res.redirect(`/cart?merchantOrderId=${merchantOrderId}&deliveryMethod=${deliveryMethod}${deliveryAddress ? `&deliveryAddress=${encodeURIComponent(deliveryAddress as string)}` : ''}`);
-      } else {
-        res.redirect("/cart?payment=success");
-      }
-    } catch (error: any) {
-      console.error("PhonePe callback error:", error);
-      res.redirect("/cart?payment=failure");
-    }
-  });
+    await storage.updateEmployee(employee.id, { points: 0 });
+    await storage.clearCart(employee.id);
 
-  app.post("/api/orders/verify-copay", async (req, res) => {
-    try {
-      const { merchantTransactionId, deliveryMethod = "office", deliveryAddress = null } = req.body;
-      const merchantId = process.env.PHONEPE_MERCHANT_ID;
-      const saltKey = process.env.PHONEPE_SALT_KEY;
-      const saltIndex = process.env.PHONEPE_SALT_INDEX || "1";
-      const apiUrl = process.env.PHONEPE_API_URL || "https://api-preprod.phonepe.com/apis/pg-sandbox";
+    const updatedEmployee = await storage.getEmployee(employee.id);
+    res.json({ orders, employee: updatedEmployee });
+  } catch (error: any) {
+    console.error("verify-copay error:", error);
+    res.status(400).json({ message: "Invalid payment", details: error.message });
+  }
+});
 
-      const endpoint = `/pg/v1/status/${merchantId}/${merchantTransactionId}`;
-      const stringToHash = endpoint + saltKey;
-      const sha256 = crypto.createHash("sha256").update(stringToHash).digest("hex");
-      const xVerify = sha256 + "###" + saltIndex;
 
-      const response = await fetch(`${apiUrl}${endpoint}`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          "X-VERIFY": xVerify,
-          "X-MERCHANT-ID": merchantId!,
-        },
-      });
-
-      const result = await response.json();
-      if (!response.ok || !result.success || result.code !== "PAYMENT_SUCCESS") {
-        return res.status(400).json({ message: "Payment not completed" });
-      }
-
-      const token = req.headers.authorization?.replace("Bearer ", "");
-      if (!token) return res.status(401).json({ message: "No token" });
-
-      const session = await storage.getSession(token);
-      if (!session) return res.status(401).json({ message: "Invalid session" });
-
-      const employee = await storage.getEmployee(session.employeeId);
-      if (!employee) return res.status(404).json({ message: "Employee not found" });
-
-      const branding = await storage.getBranding();
-      const maxSelections = branding?.maxSelectionsPerUser ?? 1;
-
-      const employeeOrders = await storage.getOrdersByEmployeeId(session.employeeId);
-      const cartItems = await storage.getCartItems(session.employeeId);
-      if (cartItems.length === 0) return res.status(400).json({ message: "Cart is empty" });
-      if (maxSelections !== -1 && employeeOrders.length + cartItems.length > maxSelections) {
-        return res.status(400).json({ message: "Selection limit reached" });
-      }
-
-      const inrPerPoint = parseFloat(branding?.inrPerPoint ?? "1");
-      let totalPointsRequired = 0;
-      for (const item of cartItems) {
-        const product = await storage.getProduct(item.productId);
-        if (!product || (product.stock || 0) < item.quantity) {
-          return res.status(400).json({ message: `Product ${product?.name || item.productId} unavailable` });
-        }
-        totalPointsRequired += Math.ceil(parseFloat(product.price) / inrPerPoint) * item.quantity;
-      }
-
-      const userPoints = employee.points ?? 0;
-      if (userPoints >= totalPointsRequired) {
-        return res.status(400).json({ message: "Sufficient points" });
-      }
-
-      const deficitPoints = totalPointsRequired - userPoints;
-      const copayInr = Math.ceil(deficitPoints * inrPerPoint);
-      const paidAmount = result.data.amount / 100;
-
-      if (paidAmount !== copayInr) {
-        return res.status(400).json({ message: "Amount mismatch" });
-      }
-
-      const orders = [];
-      for (const item of cartItems) {
-        const product = await storage.getProduct(item.productId);
-        await storage.updateProduct(item.productId, { stock: (product!.stock || 0) - item.quantity });
-        const order = await storage.createOrder({
-          employeeId: employee.id,
-          productId: item.productId,
-          selectedColor: item.selectedColor,
-          quantity: item.quantity,
-          metadata: {
-            usedPoints: Math.ceil(parseFloat(product!.price) / inrPerPoint) * item.quantity,
-            copayInr,
-            paymentId: result.data.transactionId,
-            phonepeOrderId: merchantTransactionId,
-            deliveryMethod,
-            deliveryAddress,
-          },
-        });
-        orders.push({ order, product });
-      }
-
-      await storage.updateEmployee(employee.id, { points: 0 });
-      await storage.clearCart(employee.id);
-      const updatedEmployee = await storage.getEmployee(employee.id);
-
-      res.json({ orders, employee: updatedEmployee });
-    } catch (error: any) {
-      console.error("verify-copay error:", error);
-      res.status(400).json({ message: "Invalid payment", details: error.message });
-    }
-  });
 
   app.get("/api/orders/my-orders", async (req, res) => {
     try {
@@ -1004,26 +1105,56 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Products Admin
-  app.post("/api/admin/products", async (req, res) => {
-    try {
-      const productData = insertProductSchema.parse(req.body);
-      const product = await storage.createProduct(productData);
-      res.json(product);
-    } catch {
-      res.status(400).json({ message: "Invalid product data" });
-    }
-  });
+// Products Admin
+app.post("/api/admin/products", async (req, res) => {
+  try {
+    const raw = { ...req.body };
 
-  app.put("/api/admin/products/:id", async (req, res) => {
+    // ✅ normalize slabs before schema validation
     try {
-      const updates = req.body;
-      const product = await storage.updateProduct(req.params.id, updates);
-      if (!product) return res.status(404).json({ message: "Product not found" });
-      res.json(product);
-    } catch {
-      res.status(500).json({ message: "Error updating product" });
+      raw.priceSlabs = normalizePriceSlabs(raw.priceSlabs);
+    } catch (e: any) {
+      return res.status(400).json({ message: e.message || "Invalid price slabs" });
     }
-  });
+
+    // ✅ must include priceSlabs in insertProductSchema (we added it)
+    const productData = insertProductSchema.parse(raw);
+
+    const product = await storage.createProduct(productData);
+    res.json(product);
+  } catch (error: any) {
+    console.error("Create product error:", error);
+    res.status(400).json({ message: "Invalid product data", details: error.message });
+  }
+});
+
+app.put("/api/admin/products/:id", async (req, res) => {
+  try {
+    const updates = { ...req.body };
+
+    // ✅ normalize slabs on update too
+    if ("priceSlabs" in updates) {
+      try {
+        updates.priceSlabs = normalizePriceSlabs(updates.priceSlabs);
+      } catch (e: any) {
+        return res.status(400).json({ message: e.message || "Invalid price slabs" });
+      }
+    }
+
+    // OPTIONAL: if you want to validate updates too (recommended)
+    // This ensures bad payload doesn’t get saved.
+    // const validated = insertProductSchema.partial().parse(updates);
+
+    const product = await storage.updateProduct(req.params.id, updates);
+    if (!product) return res.status(404).json({ message: "Product not found" });
+    res.json(product);
+  } catch (error: any) {
+    console.error("Update product error:", error);
+    res.status(500).json({ message: "Error updating product", details: error.message });
+  }
+});
+
+
 
   app.delete("/api/admin/products/:id", async (req, res) => {
     try {

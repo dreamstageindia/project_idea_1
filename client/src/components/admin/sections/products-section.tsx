@@ -2,7 +2,6 @@ import { useState } from "react";
 import { ProductCreate } from "@/components/admin/products/product-create";
 import { ProductsTable } from "@/components/admin/products/products-table";
 import { CategoriesManagement } from "@/components/admin/categories/categories-management";
-import { Button } from "@/components/ui/button";
 
 export function ProductsSection() {
   const [activeTab, setActiveTab] = useState<"categories" | "create" | "list">("list");
