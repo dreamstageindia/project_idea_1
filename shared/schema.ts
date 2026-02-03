@@ -73,9 +73,9 @@ export const products = pgTable("products", {
   categoryIds: text("category_ids").array().notNull().default(sql`ARRAY[]::text[]`),
   csrSupport: boolean("csr_support").default(false),
 
-  // ✅ NEW: price slabs persisted in DB (jsonb column: price_slabs)
+  // ✅ UPDATED: price slabs include minQty, maxQty, price
   priceSlabs: json("price_slabs")
-    .$type<Array<{ minQty: number; price: string }>>()
+    .$type<Array<{ minQty: number; maxQty: number | null; price: string }>>()
     .default([]),
 
   createdAt: timestamp("created_at").defaultNow(),
@@ -224,13 +224,17 @@ export const insertEmployeeSchema = createInsertSchema(employees).pick({
   points: true,
 });
 
-// ✅ NEW: slab schema
+// ✅ UPDATED: slab schema includes maxQty
 const priceSlabSchema = z.object({
   minQty: z.number().int().min(1, "Min Qty must be >= 1"),
+  maxQty: z.number().int().min(1).nullable().default(null),
   price: z
     .string()
     .refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) >= 0, "Valid slab price is required"),
-});
+}).refine(
+  (s) => s.maxQty === null || s.maxQty >= s.minQty,
+  { message: "Max Qty must be empty (open-ended) or >= Min Qty" }
+);
 
 export const insertProductSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -248,7 +252,7 @@ export const insertProductSchema = z.object({
   categoryIds: z.array(z.string()).default([]),
   csrSupport: z.boolean().default(false),
 
-  // ✅ MUST be here, else Zod strips it and it never saves
+  // ✅ UPDATED
   priceSlabs: z.array(priceSlabSchema).default([]),
 });
 
@@ -264,6 +268,7 @@ export const insertOrderSchema = createInsertSchema(orders)
     metadata: z
       .object({
         usedPoints: z.number().optional(),
+        unitPrice: z.number().optional(), // ✅ helpful for audit
         copayInr: z.number().optional().nullable(),
         paymentId: z.string().optional().nullable(),
         phonepeOrderId: z.string().optional().nullable(),
@@ -353,6 +358,7 @@ export type InsertOrder = z.infer<typeof insertOrderSchema>;
 export type Order = typeof orders.$inferSelect & {
   metadata: {
     usedPoints: number;
+    unitPrice?: number;
     copayInr?: number;
     paymentId?: string;
     phonepeOrderId?: string;

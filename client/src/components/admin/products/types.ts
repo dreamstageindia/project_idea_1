@@ -3,6 +3,7 @@ import type { Campaign } from "@/components/admin/campaigns/types";
 
 export type PriceSlab = {
   minQty: number;   // minimum quantity for this price to apply
+  maxQty: number | null; // null => open-ended (∞)
   price: string;    // price (same format as Product.price)
 };
 

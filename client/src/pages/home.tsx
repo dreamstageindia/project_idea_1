@@ -6,7 +6,7 @@ import { Footer } from "@/components/layout/footer";
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
 import { ArrowRight } from "lucide-react";
-import logo from "@assets/virtusa_logo_icon.jpg";
+import logo from "@assets/your_logo.jpg";
 
 type Branding = {
   id: string;

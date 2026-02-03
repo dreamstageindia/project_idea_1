@@ -25,33 +25,47 @@ const defaultNewProduct: Partial<Product> = {
   csrSupport: false,
   backupProductId: null,
   categoryIds: [],
-  priceSlabs: [], // ✅ NEW
+  priceSlabs: [], // ✅ UPDATED
 };
 
 function normalizeSlabs(slabs: PriceSlab[]): PriceSlab[] {
-  // Remove empty rows, normalize numbers, sort and validate duplicates later
   const cleaned = slabs
-    .map((s) => ({
-      minQty: Number(s.minQty || 0),
-      price: String(s.price ?? "0"),
-    }))
+    .map((s) => {
+      const minQty = Number((s as any).minQty || 0);
+
+      // allow "" in UI -> treat as null
+      const rawMax = (s as any).maxQty;
+      const maxQty =
+        rawMax === "" || rawMax === undefined || rawMax === null ? null : Number(rawMax);
+
+      const price = String((s as any).price ?? "").trim();
+
+      return { minQty, maxQty, price };
+    })
     .filter((s) => Number.isFinite(s.minQty) && s.minQty > 0 && s.price !== "");
 
-  // sort ascending by minQty
-  cleaned.sort((a, b) => a.minQty - b.minQty);
+  cleaned.sort(
+    (a, b) => a.minQty - b.minQty || (a.maxQty ?? Infinity) - (b.maxQty ?? Infinity)
+  );
+
   return cleaned;
+}
+
+function rangesOverlap(aMin: number, aMax: number, bMin: number, bMax: number) {
+  return aMin <= bMax && bMin <= aMax;
 }
 
 export function ProductCreate() {
   const { toast } = useToast();
   const qc = useQueryClient();
+
   const [newProduct, setNewProduct] = useState<Partial<Product>>(defaultNewProduct);
   const [newProductImages, setNewProductImages] = useState<string[]>([]);
   const [colorsInput, setColorsInput] = useState<string>("");
   const [packagesInput, setPackagesInput] = useState<string>("");
   const [specificationsInput, setSpecificationsInput] = useState<string>("");
 
-  // ✅ NEW: slabs state (kept separate for easy UI)
+  // ✅ UPDATED slab state
   const [priceSlabs, setPriceSlabs] = useState<PriceSlab[]>([]);
 
   const { data: products = [] } = useQuery<Product[]>({
@@ -71,12 +85,13 @@ export function ProductCreate() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/products-admin"] });
       toast({ title: "Product created successfully" });
+
       setNewProduct(defaultNewProduct);
       setNewProductImages([]);
       setColorsInput("");
       setPackagesInput("");
       setSpecificationsInput("");
-      setPriceSlabs([]); // ✅ reset slabs
+      setPriceSlabs([]); // reset
     },
     onError: (e: any) =>
       toast({
@@ -99,36 +114,67 @@ export function ProductCreate() {
 
   const selectedCategoryIds = newProduct.categoryIds ?? [];
 
-  // ✅ derived validation for slabs
   const slabValidation = useMemo(() => {
     const normalized = normalizeSlabs(priceSlabs);
 
-    // duplicates check
-    const seen = new Set<number>();
-    const dup = normalized.find((s) => {
-      if (seen.has(s.minQty)) return true;
-      seen.add(s.minQty);
-      return false;
-    });
-
-    // price must be a valid number >= 0
+    // price must be valid number >= 0
     const badPrice = normalized.find((s) => {
       const p = Number(s.price);
       return !Number.isFinite(p) || p < 0;
     });
 
+    // maxQty must be null or >= minQty
+    const badRange = normalized.find((s) => {
+      if (s.maxQty === null) return false;
+      return !Number.isFinite(s.maxQty) || s.maxQty < s.minQty;
+    });
+
+    // only one open-ended slab
+    const openEndedCount = normalized.filter((s) => s.maxQty === null).length;
+    const multipleOpenEnded = openEndedCount > 1;
+
+    // overlap check (treat null max as Infinity)
+    let hasOverlap = false;
+    for (let i = 0; i < normalized.length; i++) {
+      const a = normalized[i];
+      const aMax = a.maxQty ?? Number.POSITIVE_INFINITY;
+
+      for (let j = i + 1; j < normalized.length; j++) {
+        const b = normalized[j];
+        const bMax = b.maxQty ?? Number.POSITIVE_INFINITY;
+
+        if (rangesOverlap(a.minQty, aMax, b.minQty, bMax)) {
+          hasOverlap = true;
+          break;
+        }
+      }
+      if (hasOverlap) break;
+    }
+
     return {
       normalized,
-      hasDuplicateMinQty: Boolean(dup),
       badPrice: Boolean(badPrice),
+      badRange: Boolean(badRange),
+      multipleOpenEnded,
+      hasOverlap,
     };
   }, [priceSlabs]);
 
   const addSlabRow = () => {
-    setPriceSlabs((prev) => [
-      ...prev,
-      { minQty: prev.length ? prev[prev.length - 1].minQty + 1 : 1, price: newProduct.price ?? "0.00" },
-    ]);
+    setPriceSlabs((prev) => {
+      const last = prev[prev.length - 1];
+      const lastMax = last?.maxQty ?? last?.minQty ?? 0;
+      const nextMin = Number(lastMax) + 1 || 1;
+
+      return [
+        ...prev,
+        {
+          minQty: nextMin,
+          maxQty: null,
+          price: newProduct.price ?? "0.00",
+        },
+      ];
+    });
   };
 
   const removeSlabRow = (idx: number) => {
@@ -140,7 +186,6 @@ export function ProductCreate() {
   };
 
   const handleCreate = () => {
-    // Validate required fields
     if (!newProduct.name?.trim()) {
       toast({ title: "Name is required", variant: "destructive" });
       return;
@@ -150,11 +195,27 @@ export function ProductCreate() {
       return;
     }
 
-    // Validate slab pricing rows (if any)
-    if (slabValidation.hasDuplicateMinQty) {
+    // slab validations
+    if (slabValidation.badRange) {
       toast({
-        title: "Invalid slab pricing",
-        description: "Duplicate minimum quantity found. Each slab must have a unique Min Qty.",
+        title: "Invalid slab range",
+        description: "Max Qty must be empty (open-ended) or ≥ Min Qty.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (slabValidation.multipleOpenEnded) {
+      toast({
+        title: "Invalid slab range",
+        description: "Only one open-ended slab (blank Max Qty) is allowed.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (slabValidation.hasOverlap) {
+      toast({
+        title: "Invalid slab range",
+        description: "Slab ranges overlap. Please make them non-overlapping.",
         variant: "destructive",
       });
       return;
@@ -168,7 +229,6 @@ export function ProductCreate() {
       return;
     }
 
-    // Build the complete product data
     const productData: Partial<Product> = {
       name: newProduct.name.trim(),
       price: newProduct.price || "0.00",
@@ -183,14 +243,11 @@ export function ProductCreate() {
       packagesInclude: packagesInput.split("\n").map((s) => s.trim()).filter(Boolean),
       specifications: specificationsInput.trim(),
 
-      // ✅ NEW
-      // Example semantics:
-      // If slabs exist: price for qty >= minQty is slab.price (pick highest minQty <= qty)
+      // ✅ UPDATED
       priceSlabs: slabValidation.normalized,
     };
 
     console.log("Final product data to submit:", productData);
-
     createProductMutation.mutate(productData);
   };
 
@@ -368,13 +425,14 @@ export function ProductCreate() {
             />
           </div>
 
-          {/* ✅ Slab Pricing */}
+          {/* ✅ UPDATED: Slab Pricing */}
           <div className="md:col-span-2">
             <div className="flex items-center justify-between">
               <div>
                 <Label>Slab Pricing (optional)</Label>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Define price tiers by minimum quantity. Example: Min Qty 5 → price applies when user buys 5 or more.
+                  Define price tiers by quantity range. Example: 5–10 → price applies when qty is between 5 and 10.
+                  Leave Max Qty empty for open-ended (e.g., 51+).
                 </p>
               </div>
               <Button type="button" variant="outline" onClick={addSlabRow}>
@@ -388,32 +446,51 @@ export function ProductCreate() {
             ) : (
               <div className="mt-3 space-y-2">
                 <div className="grid grid-cols-12 gap-2 text-xs text-muted-foreground px-1">
-                  <div className="col-span-4">Min Qty *</div>
-                  <div className="col-span-6">Price *</div>
+                  <div className="col-span-3">Min Qty *</div>
+                  <div className="col-span-3">Max Qty</div>
+                  <div className="col-span-4">Price *</div>
                   <div className="col-span-2 text-right">Action</div>
                 </div>
 
                 {priceSlabs.map((slab, idx) => (
                   <div key={idx} className="grid grid-cols-12 gap-2 items-center">
-                    <div className="col-span-4">
+                    <div className="col-span-3">
                       <Input
                         type="number"
                         min={1}
-                        value={String(slab.minQty ?? "")}
-                        onChange={(e) => updateSlabRow(idx, { minQty: Number(e.target.value) || 0 })}
-                        placeholder="e.g., 5"
+                        value={String((slab as any).minQty ?? "")}
+                        onChange={(e) => updateSlabRow(idx, { minQty: Number(e.target.value) || 0 } as any)}
+                        placeholder="e.g., 1"
                       />
                     </div>
-                    <div className="col-span-6">
+
+                    <div className="col-span-3">
+                      <Input
+                        type="number"
+                        min={1}
+                        value={(slab as any).maxQty === null ? "" : String((slab as any).maxQty ?? "")}
+                        onChange={(e) =>
+                          updateSlabRow(
+                            idx,
+                            { maxQty: e.target.value === "" ? null : Number(e.target.value) || 0 } as any
+                          )
+                        }
+                        placeholder='blank = "∞"'
+                      />
+                      <p className="text-[10px] text-muted-foreground mt-1">Leave empty for open-ended</p>
+                    </div>
+
+                    <div className="col-span-4">
                       <Input
                         type="number"
                         step="0.01"
                         min={0}
-                        value={String(slab.price ?? "")}
-                        onChange={(e) => updateSlabRow(idx, { price: e.target.value })}
+                        value={String((slab as any).price ?? "")}
+                        onChange={(e) => updateSlabRow(idx, { price: e.target.value } as any)}
                         placeholder="e.g., 199.00"
                       />
                     </div>
+
                     <div className="col-span-2 flex justify-end">
                       <Button
                         type="button"
@@ -428,15 +505,20 @@ export function ProductCreate() {
                   </div>
                 ))}
 
-                {(slabValidation.hasDuplicateMinQty || slabValidation.badPrice) && (
+                {(slabValidation.badRange ||
+                  slabValidation.multipleOpenEnded ||
+                  slabValidation.hasOverlap ||
+                  slabValidation.badPrice) && (
                   <div className="text-sm text-red-500">
-                    {slabValidation.hasDuplicateMinQty && <div>• Duplicate Min Qty found. Each slab must be unique.</div>}
+                    {slabValidation.badRange && <div>• Max Qty must be empty or ≥ Min Qty.</div>}
+                    {slabValidation.multipleOpenEnded && <div>• Only one open-ended slab is allowed.</div>}
+                    {slabValidation.hasOverlap && <div>• Slab ranges overlap. Fix the ranges.</div>}
                     {slabValidation.badPrice && <div>• Invalid price in one or more slabs (must be number ≥ 0).</div>}
                   </div>
                 )}
 
                 <p className="text-xs text-muted-foreground">
-                  Tip: system should apply the slab with the highest Min Qty that is ≤ selected quantity.
+                  Tip: When user selects a quantity, system should pick the slab whose range contains the quantity.
                 </p>
               </div>
             )}

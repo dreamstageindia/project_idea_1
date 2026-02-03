@@ -49,31 +49,90 @@ function toPublicUrl(absPath: string) {
   return `/uploads/${rel}`;
 }
 
-function normalizePriceSlabs(input: any): Array<{ minQty: number; price: string }> {
+type PriceSlabRange = { minQty: number; maxQty: number | null; price: string };
+
+function normalizePriceSlabs(input: any): PriceSlabRange[] {
   if (!Array.isArray(input)) return [];
 
-  const cleaned = input
-    .map((s) => ({
-      minQty: Number(s?.minQty),
-      price: String(s?.price ?? "").trim(),
-    }))
+  const cleaned: PriceSlabRange[] = input
+    .map((s) => {
+      const minQty = Number(s?.minQty);
+
+      const rawMax = s?.maxQty;
+      const maxQty =
+        rawMax === "" || rawMax === undefined || rawMax === null ? null : Number(rawMax);
+
+      const price = String(s?.price ?? "").trim();
+
+      return { minQty, maxQty, price };
+    })
     .filter((s) => Number.isFinite(s.minQty) && s.minQty > 0 && s.price !== "");
 
+  // price + range validation
   for (const s of cleaned) {
     const p = Number(s.price);
     if (!Number.isFinite(p) || p < 0) throw new Error("Slab price must be a number >= 0");
+
+    if (s.maxQty !== null) {
+      if (!Number.isFinite(s.maxQty) || s.maxQty < s.minQty) {
+        throw new Error("Max Qty must be empty (open-ended) or >= Min Qty");
+      }
+    }
   }
 
-  cleaned.sort((a, b) => a.minQty - b.minQty);
+  // only one open-ended slab
+  if (cleaned.filter((s) => s.maxQty === null).length > 1) {
+    throw new Error("Only one open-ended slab (blank Max Qty) is allowed");
+  }
 
-  const seen = new Set<number>();
-  for (const s of cleaned) {
-    if (seen.has(s.minQty)) throw new Error("Duplicate Min Qty is not allowed in slab pricing");
-    seen.add(s.minQty);
+  // sort by minQty then maxQty
+  cleaned.sort(
+    (a, b) => a.minQty - b.minQty || (a.maxQty ?? Infinity) - (b.maxQty ?? Infinity)
+  );
+
+  // overlap check (null max => Infinity)
+  const toMax = (v: number | null) => (v === null ? Number.POSITIVE_INFINITY : v);
+
+  for (let i = 0; i < cleaned.length; i++) {
+    const a = cleaned[i];
+    const aMax = toMax(a.maxQty);
+
+    for (let j = i + 1; j < cleaned.length; j++) {
+      const b = cleaned[j];
+      const bMax = toMax(b.maxQty);
+
+      const overlap = a.minQty <= bMax && b.minQty <= aMax;
+      if (overlap) {
+        throw new Error("Slab ranges overlap. Please make ranges non-overlapping.");
+      }
+    }
   }
 
   return cleaned;
 }
+
+function getUnitPriceForQty(product: any, qty: number): number {
+  const base = Number(product?.price ?? 0);
+  const slabs = Array.isArray(product?.priceSlabs) ? product.priceSlabs : [];
+
+  if (!slabs.length) return base;
+
+  const match = slabs.find((s: any) => {
+    const min = Number(s?.minQty);
+    const max =
+      s?.maxQty === null || s?.maxQty === undefined ? Number.POSITIVE_INFINITY : Number(s?.maxQty);
+
+    return Number.isFinite(min) && qty >= min && qty <= max;
+  });
+
+  if (!match) return base;
+
+  const slabPrice = Number(match.price);
+  if (!Number.isFinite(slabPrice) || slabPrice < 0) return base;
+
+  return slabPrice;
+}
+
 
 
 function isValidEmail(email: string): boolean {
@@ -526,72 +585,86 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // Orders API with delivery support
   app.post("/api/orders", async (req, res) => {
     try {
       const token = req.headers.authorization?.replace("Bearer ", "");
       if (!token) return res.status(401).json({ message: "No token provided" });
+  
       const session = await storage.getSession(token);
       if (!session) return res.status(401).json({ message: "Invalid session" });
+  
       const employee = await storage.getEmployee(session.employeeId);
       if (!employee) return res.status(404).json({ message: "Employee not found" });
+  
       const branding = await storage.getBranding();
       const maxSelections = branding?.maxSelectionsPerUser ?? 1;
-
+  
       const { deliveryMethod = "office", deliveryAddress = null } = req.body;
-
+  
       const cartItems = await storage.getCartItems(session.employeeId);
       if (cartItems.length === 0) return res.status(400).json({ message: "Cart is empty" });
-
+  
       const employeeOrders = await storage.getOrdersByEmployeeId(session.employeeId);
       if (maxSelections !== -1 && employeeOrders.length + cartItems.length > maxSelections) {
         return res.status(400).json({ message: "Selection limit reached" });
       }
-
+  
       const inrPerPoint = parseFloat(branding?.inrPerPoint ?? "1");
       let totalPointsRequired = 0;
-
+  
+      // ✅ slab-aware points calc
       for (const item of cartItems) {
         const p = await storage.getProduct(item.productId);
         if (!p || (p.stock || 0) < item.quantity) {
           return res.status(400).json({ message: `Product ${p?.name || item.productId} unavailable` });
         }
-        totalPointsRequired += Math.ceil(parseFloat(p.price) / inrPerPoint) * item.quantity;
+  
+        const unitPrice = getUnitPriceForQty(p, item.quantity);
+        totalPointsRequired += Math.ceil(unitPrice / inrPerPoint) * item.quantity;
       }
-
+  
       const userPoints = employee.points ?? 0;
       if (userPoints < totalPointsRequired) {
         return res.status(400).json({ message: "Insufficient points" });
       }
-
-      const orders = [];
+  
+      const orders: any[] = [];
       for (const item of cartItems) {
         const p = await storage.getProduct(item.productId);
-        await storage.updateProduct(item.productId, { stock: (p!.stock || 0) - item.quantity });
+        if (!p) continue;
+  
+        await storage.updateProduct(item.productId, { stock: (p.stock || 0) - item.quantity });
+  
+        const unitPrice = getUnitPriceForQty(p, item.quantity);
+        const usedPoints = Math.ceil(unitPrice / inrPerPoint) * item.quantity;
+  
         const order = await storage.createOrder({
           employeeId: session.employeeId,
           productId: item.productId,
           selectedColor: item.selectedColor,
           quantity: item.quantity,
-          metadata: { 
-            usedPoints: Math.ceil(parseFloat(p!.price) / inrPerPoint) * item.quantity,
+          metadata: {
+            usedPoints,
+            unitPrice,
             deliveryMethod,
             deliveryAddress,
           },
         });
+  
         orders.push({ order, product: p });
       }
-
+  
       await storage.updateEmployee(employee.id, { points: userPoints - totalPointsRequired });
       await storage.clearCart(session.employeeId);
+  
       const updatedEmployee = await storage.getEmployee(session.employeeId);
-
       res.json({ orders, employee: updatedEmployee });
     } catch (error: any) {
       console.error("Orders POST error:", error);
       res.status(500).json({ message: "Error creating orders", details: error.message });
     }
   });
+  
 
 // ===============================
 // PhonePe Payment Routes (UPDATED)
@@ -602,7 +675,6 @@ export async function registerRoutes(app: Express): Promise<void> {
 // PHONEPE_REDIRECT_URL_BASE  (frontend base URL)
 // Optional (if you want): PHONEPE_API_URL
 // ===============================
-
 app.post("/api/orders/create-copay-order", async (req, res) => {
   try {
     const token = req.headers.authorization?.replace("Bearer ", "");
@@ -621,8 +693,8 @@ app.post("/api/orders/create-copay-order", async (req, res) => {
 
     const branding = await storage.getBranding();
     const maxSelections = branding?.maxSelectionsPerUser ?? 1;
-    const employeeOrders = await storage.getOrdersByEmployeeId(session.employeeId);
 
+    const employeeOrders = await storage.getOrdersByEmployeeId(session.employeeId);
     if (maxSelections !== -1 && employeeOrders.length + cartItems.length > maxSelections) {
       return res.status(400).json({ message: "Selection limit reached" });
     }
@@ -630,12 +702,17 @@ app.post("/api/orders/create-copay-order", async (req, res) => {
     const inrPerPoint = parseFloat(branding?.inrPerPoint ?? "1");
     let totalPointsRequired = 0;
 
+    // ✅ slab-aware points calc
     for (const item of cartItems) {
       const product = await storage.getProduct(item.productId);
       if (!product || (product.stock || 0) < item.quantity) {
-        return res.status(400).json({ message: `Product ${product?.name || item.productId} unavailable` });
+        return res
+          .status(400)
+          .json({ message: `Product ${product?.name || item.productId} unavailable` });
       }
-      totalPointsRequired += Math.ceil(parseFloat(product.price) / inrPerPoint) * item.quantity;
+
+      const unitPrice = getUnitPriceForQty(product, item.quantity);
+      totalPointsRequired += Math.ceil(unitPrice / inrPerPoint) * item.quantity;
     }
 
     const userPoints = employee.points ?? 0;
@@ -646,11 +723,10 @@ app.post("/api/orders/create-copay-order", async (req, res) => {
     const deficitPoints = totalPointsRequired - userPoints;
     const copayInr = Math.ceil(deficitPoints * inrPerPoint);
 
-    // ✅ Env config (YOU SAID YOU HAVE THESE)
     const merchantId = process.env.PHONEPE_MERCHANT_ID;
     const saltKey = process.env.PHONEPE_SALT_KEY;
     const saltIndex = process.env.PHONEPE_SALT_INDEX || "1";
-    const redirectBase = process.env.PHONEPE_REDIRECT_URL_BASE; // frontend base URL
+    const redirectBase = process.env.PHONEPE_REDIRECT_URL_BASE;
     const apiUrl = process.env.PHONEPE_API_URL || "https://api-preprod.phonepe.com/apis/pg-sandbox";
 
     if (!merchantId || !saltKey || !redirectBase) {
@@ -661,12 +737,8 @@ app.post("/api/orders/create-copay-order", async (req, res) => {
     }
 
     const merchantTransactionId = `TXN_${Date.now()}`;
-
-    // ✅ redirectUrl should be FRONTEND cart route
     const redirectUrl = `${redirectBase.replace(/\/$/, "")}/cart`;
 
-    // ✅ callbackUrl must be BACKEND endpoint reachable by PhonePe
-    // We can derive backend base from request (works behind most proxies if configured)
     const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol;
     const host = (req.headers["x-forwarded-host"] as string) || req.get("host");
     const backendBase = `${proto}://${host}`;
@@ -684,14 +756,12 @@ app.post("/api/orders/create-copay-order", async (req, res) => {
       merchantId,
       merchantTransactionId,
       merchantUserId: employee.id,
-      amount: copayInr * 100, // paise
+      amount: copayInr * 100,
       redirectUrl,
       redirectMode: "REDIRECT",
       callbackUrl,
       mobileNumber: employee.phoneNumber?.replace(/^\+91/, ""),
-      paymentInstrument: {
-        type: "PAY_PAGE",
-      },
+      paymentInstrument: { type: "PAY_PAGE" },
     };
 
     const base64Payload = Buffer.from(JSON.stringify(payload)).toString("base64");
@@ -727,7 +797,6 @@ app.post("/api/orders/create-copay-order", async (req, res) => {
       return res.status(500).json({ message: "PhonePe redirect URL missing", details: result });
     }
 
-    // ✅ IMPORTANT: frontend expects these fields (we fixed it earlier)
     res.json({
       paymentUrl,
       merchantTransactionId,
@@ -737,6 +806,7 @@ app.post("/api/orders/create-copay-order", async (req, res) => {
     res.status(500).json({ message: "Failed to create copay order", details: error.message });
   }
 });
+
 
 app.post("/api/orders/phonepe-callback", async (req, res) => {
   try {
@@ -770,7 +840,6 @@ app.post("/api/orders/phonepe-callback", async (req, res) => {
 
 app.post("/api/orders/verify-copay", async (req, res) => {
   try {
-    // ✅ Accept both names (safety)
     const {
       merchantTransactionId,
       merchantOrderId,
@@ -833,12 +902,17 @@ app.post("/api/orders/verify-copay", async (req, res) => {
     const inrPerPoint = parseFloat(branding?.inrPerPoint ?? "1");
     let totalPointsRequired = 0;
 
+    // ✅ slab-aware points calc
     for (const item of cartItems) {
       const product = await storage.getProduct(item.productId);
       if (!product || (product.stock || 0) < item.quantity) {
-        return res.status(400).json({ message: `Product ${product?.name || item.productId} unavailable` });
+        return res
+          .status(400)
+          .json({ message: `Product ${product?.name || item.productId} unavailable` });
       }
-      totalPointsRequired += Math.ceil(parseFloat(product.price) / inrPerPoint) * item.quantity;
+
+      const unitPrice = getUnitPriceForQty(product, item.quantity);
+      totalPointsRequired += Math.ceil(unitPrice / inrPerPoint) * item.quantity;
     }
 
     const userPoints = employee.points ?? 0;
@@ -854,11 +928,15 @@ app.post("/api/orders/verify-copay", async (req, res) => {
       return res.status(400).json({ message: "Amount mismatch", expected: copayInr, paid: paidAmount });
     }
 
-    const orders = [];
+    const orders: any[] = [];
     for (const item of cartItems) {
       const product = await storage.getProduct(item.productId);
+      if (!product) continue;
 
-      await storage.updateProduct(item.productId, { stock: (product!.stock || 0) - item.quantity });
+      await storage.updateProduct(item.productId, { stock: (product.stock || 0) - item.quantity });
+
+      const unitPrice = getUnitPriceForQty(product, item.quantity);
+      const usedPoints = Math.ceil(unitPrice / inrPerPoint) * item.quantity;
 
       const order = await storage.createOrder({
         employeeId: employee.id,
@@ -866,7 +944,8 @@ app.post("/api/orders/verify-copay", async (req, res) => {
         selectedColor: item.selectedColor,
         quantity: item.quantity,
         metadata: {
-          usedPoints: Math.ceil(parseFloat(product!.price) / inrPerPoint) * item.quantity,
+          usedPoints,
+          unitPrice,
           copayInr,
           paymentId: result?.data?.transactionId,
           phonepeOrderId: txnId,
@@ -888,6 +967,7 @@ app.post("/api/orders/verify-copay", async (req, res) => {
     res.status(400).json({ message: "Invalid payment", details: error.message });
   }
 });
+
 
 
 
@@ -1104,55 +1184,53 @@ app.post("/api/orders/verify-copay", async (req, res) => {
     }
   });
 
-  // Products Admin
-// Products Admin
-app.post("/api/admin/products", async (req, res) => {
-  try {
-    const raw = { ...req.body };
-
-    // ✅ normalize slabs before schema validation
+  app.post("/api/admin/products", async (req, res) => {
     try {
-      raw.priceSlabs = normalizePriceSlabs(raw.priceSlabs);
-    } catch (e: any) {
-      return res.status(400).json({ message: e.message || "Invalid price slabs" });
-    }
-
-    // ✅ must include priceSlabs in insertProductSchema (we added it)
-    const productData = insertProductSchema.parse(raw);
-
-    const product = await storage.createProduct(productData);
-    res.json(product);
-  } catch (error: any) {
-    console.error("Create product error:", error);
-    res.status(400).json({ message: "Invalid product data", details: error.message });
-  }
-});
-
-app.put("/api/admin/products/:id", async (req, res) => {
-  try {
-    const updates = { ...req.body };
-
-    // ✅ normalize slabs on update too
-    if ("priceSlabs" in updates) {
+      const raw = { ...req.body };
+  
+      // ✅ normalize slabs before schema validation
       try {
-        updates.priceSlabs = normalizePriceSlabs(updates.priceSlabs);
+        raw.priceSlabs = normalizePriceSlabs(raw.priceSlabs);
       } catch (e: any) {
         return res.status(400).json({ message: e.message || "Invalid price slabs" });
       }
+  
+      const productData = insertProductSchema.parse(raw);
+  
+      const product = await storage.createProduct(productData);
+      res.json(product);
+    } catch (error: any) {
+      console.error("Create product error:", error);
+      res.status(400).json({ message: "Invalid product data", details: error.message });
     }
-
-    // OPTIONAL: if you want to validate updates too (recommended)
-    // This ensures bad payload doesn’t get saved.
-    // const validated = insertProductSchema.partial().parse(updates);
-
-    const product = await storage.updateProduct(req.params.id, updates);
-    if (!product) return res.status(404).json({ message: "Product not found" });
-    res.json(product);
-  } catch (error: any) {
-    console.error("Update product error:", error);
-    res.status(500).json({ message: "Error updating product", details: error.message });
-  }
-});
+  });
+  
+  app.put("/api/admin/products/:id", async (req, res) => {
+    try {
+      const updates = { ...req.body };
+  
+      // ✅ normalize slabs on update too
+      if ("priceSlabs" in updates) {
+        try {
+          updates.priceSlabs = normalizePriceSlabs(updates.priceSlabs);
+        } catch (e: any) {
+          return res.status(400).json({ message: e.message || "Invalid price slabs" });
+        }
+      }
+  
+      // ✅ recommended: validate partial payload (prevents bad writes)
+      // const validated = insertProductSchema.partial().parse(updates);
+  
+      const product = await storage.updateProduct(req.params.id, updates);
+      if (!product) return res.status(404).json({ message: "Product not found" });
+  
+      res.json(product);
+    } catch (error: any) {
+      console.error("Update product error:", error);
+      res.status(500).json({ message: "Error updating product", details: error.message });
+    }
+  });
+  
 
 
 

@@ -16,7 +16,7 @@ interface ProductDetailModalProps {
   onColorChange: (color: string) => void;
   quantity: number;
   onQuantityChange: (qty: number) => void;
-  onAddToCart: (product: any, color: string, quantity: number) => void;
+  onAddToCart: (product: any, color: string | null, quantity: number) => void;
 }
 
 function _ProductDetailModal({
@@ -39,7 +39,11 @@ function _ProductDetailModal({
 
   const inrPerPoint = parseFloat(branding?.inrPerPoint || "1");
 
-  // ✅ Slab helpers (NEW)
+  // =========================================================
+  // ✅ Slab helpers (UPDATED)
+  // slab format: { minQty: number; maxQty: number | null; price: string }
+  // price = UNIT price for quantities in [minQty, maxQty]
+  // =========================================================
   const getUnitPriceForQty = (prod: any, qty: number): number => {
     const base = Number(prod?.price);
     const safeBase = Number.isFinite(base) ? base : 0;
@@ -49,74 +53,62 @@ function _ProductDetailModal({
 
     const q = Math.max(1, Number(qty) || 1);
 
-    const matches = (slab: any) => {
-      const from =
-        slab?.from ??
-        slab?.min ??
-        slab?.minQty ??
-        slab?.start ??
-        slab?.minQuantity ??
-        1;
+    const matchedSlab = slabs.find((s: any) => {
+      const min = Number(s?.minQty);
+      const max =
+        s?.maxQty === null || s?.maxQty === undefined ? Number.POSITIVE_INFINITY : Number(s?.maxQty);
 
-      const to =
-        slab?.to ??
-        slab?.max ??
-        slab?.maxQty ??
-        slab?.end ??
-        slab?.maxQuantity ??
-        Number.POSITIVE_INFINITY;
+      if (!Number.isFinite(min) || min <= 0) return false;
+      if (!Number.isFinite(max)) return false;
 
-      const min = Number(from);
-      const max = Number(to);
-
-      const minOk = Number.isFinite(min) ? q >= min : true;
-      const maxOk = Number.isFinite(max) ? q <= max : true;
-
-      return minOk && maxOk;
-    };
-
-    const matchedSlab = slabs.find(matches);
+      return q >= min && q <= max;
+    });
 
     if (!matchedSlab) return safeBase;
 
-    const slabPrice =
-      matchedSlab?.price ??
-      matchedSlab?.amount ??
-      matchedSlab?.inr ??
-      matchedSlab?.value ??
-      matchedSlab?.slabPrice;
-
-    const n = Number(slabPrice);
-    return Number.isFinite(n) ? n : safeBase;
+    const n = Number(matchedSlab?.price);
+    return Number.isFinite(n) && n >= 0 ? n : safeBase;
   };
 
-  // ✅ pointsRequired now depends on selected quantity slab (UPDATED)
+  const clampQty = (q: number) => {
+    const stock = Number(product?.stock ?? 0);
+    const safeStock = Number.isFinite(stock) ? stock : 0;
+    const next = Number.isFinite(q) ? q : 1;
+    return Math.max(1, Math.min(next, Math.max(1, safeStock)));
+  };
+
+  // ✅ current unit price depends on selected quantity slab
   const unitPriceInr = useMemo(() => {
     return getUnitPriceForQty(product, quantity);
   }, [product, quantity]);
 
+  // ✅ show per-unit points (matches cart + backend)
   const pointsRequired = useMemo(() => {
     return Math.ceil(unitPriceInr / inrPerPoint);
   }, [unitPriceInr, inrPerPoint]);
 
+  const linePriceInr = useMemo(() => {
+    const q = Math.max(1, Number(quantity) || 1);
+    return unitPriceInr * q;
+  }, [unitPriceInr, quantity]);
+
+  const linePoints = useMemo(() => {
+    return Math.ceil(linePriceInr / inrPerPoint);
+  }, [linePriceInr, inrPerPoint]);
+
   // Helper function to normalize specifications data
   const normalizeSpecifications = useMemo(() => {
     if (!product.specifications) return null;
-
-    console.log("Raw specifications:", product.specifications);
-    console.log("Type of specifications:", typeof product.specifications);
 
     if (typeof product.specifications === "string") {
       return product.specifications.trim();
     }
 
     if (Array.isArray(product.specifications)) {
-      console.log("Specifications is an array, joining characters:", product.specifications);
       return product.specifications.join("").trim();
     }
 
     if (typeof product.specifications === "object" && product.specifications !== null) {
-      console.log("Specifications is an object, converting to string:", product.specifications);
       return Object.entries(product.specifications)
         .map(([key, value]) => `${key}: ${value}`)
         .join("\n")
@@ -131,16 +123,11 @@ function _ProductDetailModal({
   useEffect(() => {
     if (!isOpen || !product) return;
 
-    console.log("Product colors in modal:", product.colors);
-    console.log("Product data in modal:", product);
-    console.log("Normalized specifications:", normalizeSpecifications);
-
     const first = product.colors?.[0] || "";
     if (first && selectedColor !== first) {
-      console.log("Setting initial color to:", first);
       onColorChange(first);
     }
-  }, [isOpen, product?.id, product?.colors, selectedColor, onColorChange, normalizeSpecifications]);
+  }, [isOpen, product?.id, product?.colors, selectedColor, onColorChange]);
 
   const getColorStyle = (color: string) => {
     if (color.match(/^#[0-9A-Fa-f]{6}$/)) {
@@ -184,29 +171,36 @@ function _ProductDetailModal({
       });
       return;
     }
-    if (quantity < 1 || quantity > product.stock) {
+
+    const stock = Number(product.stock ?? 0);
+    const q = clampQty(quantity);
+
+    if (q < 1 || (Number.isFinite(stock) && q > stock)) {
       toast({
         title: "Error",
-        description: `Please select a valid quantity (1 to ${product.stock}).`,
+        description: `Please select a valid quantity (1 to ${stock}).`,
         variant: "destructive",
       });
       return;
     }
-    onAddToCart(product, selectedColor || null, quantity);
+
+    onAddToCart(product, selectedColor || null, q);
   };
 
   const hasColors = Array.isArray(product.colors) && product.colors.length > 0;
-  console.log("Has colors:", hasColors, "Colors array:", product.colors);
 
-  // price slab table helpers (your existing UI)
+  // price slab table helpers (UPDATED to new slab fields)
   const priceSlabs = Array.isArray(product.priceSlabs) ? product.priceSlabs : [];
   const hasPriceSlabs = priceSlabs.length > 0;
 
-  const pointsForAmount = (amountInr: any) => {
+  const pointsForUnitAmount = (amountInr: any) => {
     const n = Number(amountInr);
     if (!Number.isFinite(n)) return null;
     return Math.ceil(n / inrPerPoint);
   };
+
+  const stock = Number(product.stock ?? 0);
+  const safeStock = Number.isFinite(stock) ? stock : 0;
 
   return (
     <Dialog
@@ -261,15 +255,24 @@ function _ProductDetailModal({
               </Button>
             </div>
 
-            {/* ✅ This now reflects selected quantity slab */}
-            <p
-              className="text-3xl font-bold text-blue-600 mb-6"
-              data-testid="text-product-detail-points-required"
-            >
-              {pointsRequired} points
-            </p>
+            {/* ✅ UPDATED: show per-unit points + line total points */}
+            <div className="mb-6">
+              <p
+                className="text-3xl font-bold text-blue-600"
+                data-testid="text-product-detail-points-required"
+              >
+                {pointsRequired} points <span className="text-base font-semibold text-muted-foreground">/ unit</span>
+              </p>
+              <p className="text-sm text-muted-foreground mt-2">
+                Unit Price: <span className="font-medium">₹{unitPriceInr.toFixed(2)}</span> •{" "}
+                Total for {Math.max(1, quantity)}:{" "}
+                <span className="font-medium">
+                  ₹{linePriceInr.toFixed(2)} ({linePoints} points)
+                </span>
+              </p>
+            </div>
 
-            {/* Price Slabs Table */}
+            {/* Price Slabs Table (UPDATED) */}
             {hasPriceSlabs && (
               <div className="mb-6">
                 <h4 className="font-semibold text-lg mb-3">Price Slabs:</h4>
@@ -278,46 +281,23 @@ function _ProductDetailModal({
                     <table className="w-full text-sm">
                       <thead className="sticky top-0 bg-gray-50 border-b">
                         <tr>
-                          <th className="text-left font-semibold px-4 py-3">Qty</th>
-                          <th className="text-left font-semibold px-4 py-3">Price (₹)</th>
-                          <th className="text-left font-semibold px-4 py-3">Points</th>
+                          <th className="text-left font-semibold px-4 py-3">Qty Range</th>
+                          <th className="text-left font-semibold px-4 py-3">Points / Unit</th>
                         </tr>
                       </thead>
                       <tbody>
                         {priceSlabs.map((slab: any, idx: number) => {
-                          const from =
-                            slab.from ??
-                            slab.min ??
-                            slab.minQty ??
-                            slab.start ??
-                            slab.minQuantity ??
-                            "";
+                          const minQty = slab?.minQty ?? "";
+                          const maxQty = slab?.maxQty;
 
-                          const to =
-                            slab.to ??
-                            slab.max ??
-                            slab.maxQty ??
-                            slab.end ??
-                            slab.maxQuantity ??
-                            "";
+                          const price = slab?.price ?? "";
 
-                          const price =
-                            slab.price ??
-                            slab.amount ??
-                            slab.inr ??
-                            slab.value ??
-                            slab.slabPrice ??
-                            "";
-
-                          const pts = pointsForAmount(price);
+                          const pts = pointsForUnitAmount(price);
 
                           return (
                             <tr key={idx} className="border-b last:border-b-0">
                               <td className="px-4 py-3 text-muted-foreground">
-                                {String(from)}{to !== "" ? ` - ${String(to)}` : ""}
-                              </td>
-                              <td className="px-4 py-3 text-muted-foreground">
-                                {price === "" ? "-" : String(price)}
+                                {String(minQty)} - {maxQty == null ? "∞" : String(maxQty)}
                               </td>
                               <td className="px-4 py-3 text-muted-foreground">
                                 {pts == null ? "-" : `${pts}`}
@@ -329,6 +309,9 @@ function _ProductDetailModal({
                     </table>
                   </div>
                 </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Slab price shown is <span className="font-medium">per unit</span>.
+                </p>
               </div>
             )}
 
@@ -377,10 +360,7 @@ function _ProductDetailModal({
                         } ${getColorStyle(color)}`}
                         style={getColorInlineStyle(color)}
                         onClick={() => {
-                          if (!selected) {
-                            console.log("Color selected:", color);
-                            onColorChange(color);
-                          }
+                          if (!selected) onColorChange(color);
                         }}
                         aria-pressed={selected}
                         aria-label={`Select color ${color}`}
@@ -410,30 +390,33 @@ function _ProductDetailModal({
                 <Button
                   variant="outline"
                   size="icon"
-                  onClick={() => onQuantityChange(Math.max(1, quantity - 1))}
+                  onClick={() => onQuantityChange(clampQty(quantity - 1))}
                   disabled={quantity <= 1}
                   className="rounded-full w-10 h-10"
                 >
                   <Minus className="h-4 w-4" />
                 </Button>
+
                 <Input
                   type="number"
                   className="w-20 text-center text-lg font-semibold"
-                  value={quantity}
-                  onChange={(e) => onQuantityChange(parseInt(e.target.value) || 1)}
+                  value={Math.max(1, Number(quantity) || 1)}
+                  onChange={(e) => onQuantityChange(clampQty(parseInt(e.target.value, 10) || 1))}
                   min={1}
-                  max={product.stock}
+                  max={Math.max(1, safeStock)}
                 />
+
                 <Button
                   variant="outline"
                   size="icon"
-                  onClick={() => onQuantityChange(Math.min(product.stock, quantity + 1))}
-                  disabled={quantity >= product.stock}
+                  onClick={() => onQuantityChange(clampQty(quantity + 1))}
+                  disabled={safeStock > 0 ? quantity >= safeStock : false}
                   className="rounded-full w-10 h-10"
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
-                <span className="text-sm text-muted-foreground ml-2">{product.stock} available</span>
+
+                <span className="text-sm text-muted-foreground ml-2">{safeStock} available</span>
               </div>
             </div>
 

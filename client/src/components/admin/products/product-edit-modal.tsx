@@ -13,7 +13,59 @@ import type { Product } from "./types";
 import type { Category } from "@/components/admin/categories/types";
 import type { Campaign } from "@/components/admin/campaigns/types";
 
-type PriceSlabRow = { minQty: number | ""; price: string };
+type PriceSlabRow = { minQty: number | ""; maxQty: number | "" | null; price: string };
+
+function normalizeSlabsForSubmit(slabs: PriceSlabRow[]) {
+  const cleaned = slabs
+    .map((s) => {
+      const minQty = s.minQty === "" ? NaN : Number(s.minQty);
+      const maxQty =
+        s.maxQty === "" || s.maxQty === null || s.maxQty === undefined ? null : Number(s.maxQty);
+      const price = (s.price ?? "").toString().trim();
+
+      return { minQty, maxQty, price };
+    })
+    .filter((s) => Number.isFinite(s.minQty) && s.minQty > 0 && s.price !== "");
+
+  for (const s of cleaned) {
+    const p = Number(s.price);
+    if (!Number.isFinite(p) || p < 0) {
+      throw new Error("Slab price must be a number >= 0");
+    }
+    if (s.maxQty !== null) {
+      if (!Number.isFinite(s.maxQty) || s.maxQty < s.minQty) {
+        throw new Error("Max Qty must be empty (open-ended) or >= Min Qty");
+      }
+    }
+  }
+
+  // Only one open-ended slab
+  if (cleaned.filter((s) => s.maxQty === null).length > 1) {
+    throw new Error("Only one open-ended slab (blank Max Qty) is allowed");
+  }
+
+  // Sort by min then max
+  cleaned.sort((a, b) => a.minQty - b.minQty || (a.maxQty ?? Infinity) - (b.maxQty ?? Infinity));
+
+  // Overlap check (null max => Infinity)
+  const toMax = (v: number | null) => (v === null ? Number.POSITIVE_INFINITY : v);
+  for (let i = 0; i < cleaned.length; i++) {
+    const a = cleaned[i];
+    const aMax = toMax(a.maxQty);
+
+    for (let j = i + 1; j < cleaned.length; j++) {
+      const b = cleaned[j];
+      const bMax = toMax(b.maxQty);
+
+      const overlap = a.minQty <= bMax && b.minQty <= aMax;
+      if (overlap) {
+        throw new Error("Slab ranges overlap. Please make ranges non-overlapping.");
+      }
+    }
+  }
+
+  return cleaned;
+}
 
 interface ProductEditModalProps {
   open: boolean;
@@ -23,47 +75,20 @@ interface ProductEditModalProps {
   categories: Category[];
 }
 
-function normalizeSlabsForSubmit(slabs: PriceSlabRow[]) {
-  // Remove empty rows, validate, sort, unique minQty
-  const cleaned = slabs
-    .map((s) => ({
-      minQty: typeof s.minQty === "string" ? Number(s.minQty) : s.minQty,
-      price: (s.price ?? "").toString().trim(),
-    }))
-    .filter((s) => Number.isFinite(s.minQty) && s.minQty > 0 && s.price !== "");
-
-  for (const s of cleaned) {
-    const p = Number(s.price);
-    if (!Number.isFinite(p) || p < 0) {
-      throw new Error("Slab price must be a number >= 0");
-    }
-  }
-
-  cleaned.sort((a, b) => a.minQty - b.minQty);
-
-  const seen = new Set<number>();
-  for (const s of cleaned) {
-    if (seen.has(s.minQty)) {
-      throw new Error("Duplicate Min Qty is not allowed in slab pricing");
-    }
-    seen.add(s.minQty);
-  }
-
-  return cleaned;
-}
-
 export function ProductEditModal({ open, onClose, product, products, categories }: ProductEditModalProps) {
   const { toast } = useToast();
   const qc = useQueryClient();
+
   const [formData, setFormData] = useState<Partial<Product>>({});
   const [images, setImages] = useState<string[]>([]);
   const [colorsInput, setColorsInput] = useState<string>("");
   const [packagesInput, setPackagesInput] = useState<string>("");
   const [specificationsInput, setSpecificationsInput] = useState<string>("");
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
-  const [priceSlabs, setPriceSlabs] = useState<PriceSlabRow[]>([{ minQty: "", price: "" }]);
 
-  // Get campaigns for this product
+  // ✅ UPDATED
+  const [priceSlabs, setPriceSlabs] = useState<PriceSlabRow[]>([{ minQty: "", maxQty: "", price: "" }]);
+
   const { data: productCampaigns = [] } = useQuery<Campaign[]>({
     queryKey: product ? [`/api/admin/products/${product.id}/campaigns`] : ["no-query"],
     enabled: !!product,
@@ -94,16 +119,17 @@ export function ProductEditModal({ open, onClose, product, products, categories 
 
       setSelectedCategoryIds(product.categoryIds || []);
 
-      // ✅ slab pricing init
+      // ✅ UPDATED: slab pricing init (min/max/price)
       const existingSlabs = (product as any)?.priceSlabs;
       if (Array.isArray(existingSlabs) && existingSlabs.length > 0) {
         const mapped: PriceSlabRow[] = existingSlabs.map((s: any) => ({
           minQty: Number(s?.minQty ?? ""),
+          maxQty: s?.maxQty === null || s?.maxQty === undefined ? "" : Number(s?.maxQty),
           price: String(s?.price ?? ""),
         }));
-        setPriceSlabs(mapped.length ? mapped : [{ minQty: "", price: "" }]);
+        setPriceSlabs(mapped.length ? mapped : [{ minQty: "", maxQty: "", price: "" }]);
       } else {
-        setPriceSlabs([{ minQty: "", price: "" }]);
+        setPriceSlabs([{ minQty: "", maxQty: "", price: "" }]);
       }
     }
   }, [product]);
@@ -135,13 +161,13 @@ export function ProductEditModal({ open, onClose, product, products, categories 
   };
 
   const addSlabRow = () => {
-    setPriceSlabs((prev) => [...prev, { minQty: "", price: "" }]);
+    setPriceSlabs((prev) => [...prev, { minQty: "", maxQty: "", price: "" }]);
   };
 
   const removeSlabRow = (idx: number) => {
     setPriceSlabs((prev) => {
       const next = prev.filter((_, i) => i !== idx);
-      return next.length ? next : [{ minQty: "", price: "" }];
+      return next.length ? next : [{ minQty: "", maxQty: "", price: "" }];
     });
   };
 
@@ -161,7 +187,7 @@ export function ProductEditModal({ open, onClose, product, products, categories 
       return;
     }
 
-    let normalizedSlabs: Array<{ minQty: number; price: string }> = [];
+    let normalizedSlabs: Array<{ minQty: number; maxQty: number | null; price: string }> = [];
     try {
       normalizedSlabs = normalizeSlabsForSubmit(priceSlabs);
     } catch (err: any) {
@@ -187,7 +213,7 @@ export function ProductEditModal({ open, onClose, product, products, categories 
       packagesInclude: packagesInput.split("\n").filter(Boolean),
       specifications: specificationsInput.trim(),
 
-      // ✅ NEW: slab pricing
+      // ✅ UPDATED
       priceSlabs: normalizedSlabs,
     };
 
@@ -253,7 +279,7 @@ export function ProductEditModal({ open, onClose, product, products, categories 
               </p>
             </div>
 
-            {/* ✅ Slab Pricing */}
+            {/* ✅ UPDATED Slab Pricing */}
             <div className="md:col-span-2">
               <div className="flex items-center justify-between">
                 <Label>Slab Pricing (optional)</Label>
@@ -269,7 +295,7 @@ export function ProductEditModal({ open, onClose, product, products, categories 
                     key={`slab-${idx}`}
                     className="grid grid-cols-12 gap-2 items-end rounded-md border border-input bg-background p-3"
                   >
-                    <div className="col-span-5">
+                    <div className="col-span-4">
                       <Label className="text-xs">Min Qty</Label>
                       <Input
                         type="number"
@@ -279,12 +305,27 @@ export function ProductEditModal({ open, onClose, product, products, categories 
                           const v = e.target.value;
                           updateSlab(idx, { minQty: v === "" ? "" : Number(v) });
                         }}
-                        placeholder="e.g., 5"
+                        placeholder="e.g., 1"
                       />
                     </div>
 
-                    <div className="col-span-5">
-                      <Label className="text-xs">Price for Qty ≥ Min Qty</Label>
+                    <div className="col-span-4">
+                      <Label className="text-xs">Max Qty</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={row.maxQty === null ? "" : (row.maxQty as any)}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          updateSlab(idx, { maxQty: v === "" ? "" : Number(v) });
+                        }}
+                        placeholder='blank = "∞"'
+                      />
+                      <p className="text-[10px] text-muted-foreground mt-1">Leave empty for open-ended</p>
+                    </div>
+
+                    <div className="col-span-3">
+                      <Label className="text-xs">Price</Label>
                       <Input
                         type="number"
                         step="0.01"
@@ -295,7 +336,7 @@ export function ProductEditModal({ open, onClose, product, products, categories 
                       />
                     </div>
 
-                    <div className="col-span-2 flex justify-end">
+                    <div className="col-span-1 flex justify-end">
                       <Button
                         type="button"
                         variant="destructive"
@@ -310,9 +351,7 @@ export function ProductEditModal({ open, onClose, product, products, categories 
                 ))}
               </div>
 
-              <p className="text-xs text-muted-foreground mt-2">
-                Example: Min Qty = 10, Price = 500 means if user buys 10 or more, unit price becomes 500.
-              </p>
+              
             </div>
 
             {/* Categories */}
@@ -381,6 +420,7 @@ export function ProductEditModal({ open, onClose, product, products, categories 
                 />
                 <UploadIcon className="h-5 w-5 opacity-60" />
               </div>
+
               {images.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-3">
                   {images.map((url, idx) => (
